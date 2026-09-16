@@ -1,6 +1,6 @@
 import os from "node:os"
 import path from "node:path"
-import { appendFile, mkdir } from "node:fs/promises"
+import { appendFile, mkdir, readFile } from "node:fs/promises"
 
 const telemetryFile =
   process.env.OPENCODE_TELEMETRY_FILE ??
@@ -8,6 +8,8 @@ const telemetryFile =
 
 let directoryReady
 let writeQueue = Promise.resolve()
+const promptIds = new Map()
+let projectMetadata = null
 
 async function ensureDirectory() {
   if (!directoryReady) {
@@ -37,6 +39,7 @@ function writeEvent(eventType, data) {
     timestamp: new Date().toISOString(),
     session_id: data.input?.sessionID ?? null,
     call_id: data.input?.callID ?? null,
+    project_metadata: projectMetadata,
     payload: data,
   }
 
@@ -65,19 +68,117 @@ function writeEvent(eventType, data) {
   return writeQueue
 }
 
-export const TracePlugin = async () => {
+function isAgentsFile(filePath) {
+  return typeof filePath === "string" && /(?:^|[\\/])AGENTS\.md$/i.test(filePath)
+}
+
+function eventData(event) {
+  return event?.properties ?? event?.data ?? {}
+}
+
+function messagePart(data) {
+  return data?.part ?? data?.properties?.part ?? data
+}
+
+function sessionIdFromEvent(data) {
+  return data?.sessionID ?? data?.sessionId ?? messagePart(data)?.sessionID ?? null
+}
+
+async function loadProjectMetadata(directory) {
+  const projectPath = typeof directory === "string" ? directory : null
+  if (!projectPath) return { path: null, agents_md: null }
+
+  let agents_md = null
+  try {
+    agents_md = await readFile(path.join(projectPath, "AGENTS.md"), "utf8")
+  } catch {
+    // Project metadata is optional and must not affect telemetry.
+  }
+
+  return { path: projectPath, agents_md }
+}
+
+export const TracePlugin = async ({ directory } = {}) => {
+  projectMetadata = await loadProjectMetadata(directory)
+
   return {
+    "chat.message": async (input, output) => {
+      const message = output.message
+      const promptId = message?.id ?? input.messageID ?? null
+      if (input.sessionID && promptId) promptIds.set(input.sessionID, promptId)
+
+      await writeEvent("prompt", {
+        input,
+        output,
+        prompt_id: promptId,
+      })
+    },
+
+    "experimental.chat.system.transform": async (input, output) => {
+      await writeEvent("system_prompt", {
+        input,
+        prompt_id: input.sessionID ? promptIds.get(input.sessionID) ?? null : null,
+        system: output.system,
+        system_state: projectMetadata,
+      })
+    },
+
     "tool.execute.before": async (input, output) => {
       await writeEvent("tool_call", {
         input,
         output,
+        prompt_id: promptIds.get(input.sessionID) ?? null,
       })
+
+      if (input.tool === "read" && isAgentsFile(output.args?.filePath)) {
+        await writeEvent("instruction_read", {
+          phase: "before",
+          input,
+          output,
+          prompt_id: promptIds.get(input.sessionID) ?? null,
+        })
+      }
     },
 
     "tool.execute.after": async (input, output) => {
       await writeEvent("tool_result", {
         input,
         output,
+        prompt_id: promptIds.get(input.sessionID) ?? null,
+      })
+
+      if (input.tool === "read" && isAgentsFile(input.args?.filePath)) {
+        await writeEvent("instruction_read", {
+          phase: "after",
+          input,
+          output,
+          prompt_id: promptIds.get(input.sessionID) ?? null,
+        })
+      }
+    },
+
+    event: async ({ event }) => {
+      if (event.type !== "message.part.updated" && event.type !== "message.updated") return
+
+      const data = eventData(event)
+      const part = messagePart(data)
+      const sessionID = sessionIdFromEvent(data)
+      const prompt_id = sessionID ? promptIds.get(sessionID) ?? null : null
+
+      if (event.type === "message.part.updated") {
+        const partType = part?.type
+        if (partType !== "reasoning" && partType !== "text") return
+
+        await writeEvent(partType === "reasoning" ? "reasoning" : "assistant_text", {
+          event,
+          prompt_id,
+        })
+        return
+      }
+
+      await writeEvent("message_updated", {
+        event,
+        prompt_id,
       })
     },
   }
