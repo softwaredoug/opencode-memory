@@ -1,0 +1,143 @@
+import pandas as pd
+from pathlib import Path
+from pydantic import BaseModel
+from collections.abc import Mapping, Sequence
+from typing import Any, Iterator
+
+
+TELEMETRY_PATH = Path.home() / ".local" / "share" / "opencode" / "telemetry.jsonl"
+
+
+class ChatEvent(BaseModel):
+    """A single user interaction and subsequent tool calls, etc."""
+
+    system_prompt: str
+    user_prompt: str
+    tool_calls: list[dict]
+
+    session_id: str
+    prompt_id: str
+
+
+def _get_nested(data: Mapping[str, Any], path: tuple[str | int, ...]) -> Any:
+    current: Any = data
+
+    for key in path:
+        if isinstance(key, int) and isinstance(current, Sequence):
+            if key < 0 or key >= len(current):
+                return None
+            current = current[key]
+        elif isinstance(key, str) and isinstance(current, Mapping):
+            if key not in current:
+                return None
+            current = current[key]
+        else:
+            return None
+    return current
+
+
+def _extract_session_id(event_dict: dict) -> str | None:
+    """Extract the session ID from a telemetry event dictionary."""
+    paths = (
+        ("event", "properties", "sessionID"),
+        ("input", "sessionID"),
+    )
+    for path in paths:
+        value = _get_nested(event_dict, path)
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_prompt_id(event_dict: dict) -> str:
+    return _get_nested(event_dict, ("output", "message", "id"))
+
+
+def _text_payload(event_dict: dict) -> str | None:
+    paths = (
+        ("output", "parts", "text"),  # For prompts
+        ("output", "parts", 0, "text"),  # For tool calls
+        ("event", "properties", "part", "text"),  # For assistant text
+        ("output", "output"),  # For tool calls
+    )
+    for path in paths:
+        value = _get_nested(event_dict, path)
+        if value is not None:
+            return value
+    return None
+
+
+def _tool_names(event_dict: dict) -> str | None:
+    """For anything with tool name, extract it as a series."""
+    return _get_nested(event_dict, ('input', 'tool'))
+
+
+def _command(event_dict: dict) -> str | None:
+    """For anything with a command, extract it as a series."""
+    paths = (
+        ("input", "args", "command"),
+        ("output", "args", "command")
+    )
+
+    for path in paths:
+        value = _get_nested(event_dict, path)
+        if value is not None:
+            return value
+
+
+def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
+    """Fill in missing session IDs by propagating the last known session ID."""
+    telemetry = telemetry.sort_values(by='timestamp').reset_index(drop=True)
+    telemetry['session_id'] = telemetry['payload'].apply(_extract_session_id)
+    telemetry['prompt_id'] = telemetry['payload'].apply(_extract_prompt_id)
+    telemetry['tool_name'] = telemetry['payload'].apply(_tool_names)
+    telemetry['command'] = telemetry['payload'].apply(_command)
+    telemetry['text'] = telemetry['payload'].apply(_text_payload)
+
+    telemetry['prompt_id'] = telemetry.groupby("session_id")['prompt_id'].ffill()
+    return telemetry
+
+
+def parse_telemetry(events=['system_prompt', 'prompt', 'tool_result', 'assistant_text']) -> pd.DataFrame:
+    """Parse the telemetry JSONL file into a DataFrame."""
+    if not TELEMETRY_PATH.exists():
+        raise FileNotFoundError(f"Telemetry file not found at {TELEMETRY_PATH}")
+
+    telemetry = _hydrate(pd.read_json(TELEMETRY_PATH, lines=True))
+    telemetry = telemetry[telemetry['event_type'].isin(events)]
+    assert isinstance(telemetry, pd.DataFrame)
+
+    return telemetry
+
+
+def prompt_docs() -> Iterator[dict]:
+    """Flattened prompt text as a single search document."""
+    telemetry = parse_telemetry(events=['system_prompt', 'prompt', 'assistant_text'])
+    prompt_ids = telemetry['prompt_id'].unique()
+    for prompt_id in prompt_ids:
+        prompt_telemetry = telemetry[telemetry['prompt_id'] == prompt_id]
+        session_id = prompt_telemetry['session_id'].iloc[0]
+        # Concat all text to get text for the prompt document
+        docs_to_index = prompt_telemetry['text'].drop_duplicates().dropna().index
+        prefix_pre_event_type = {
+            "system_prompt": "System prompt:\n",
+            "prompt": "User:\n",
+            "assistant_text": "Assistant:\n",
+            "tool_result": "Tool result:\n",
+            "tool_call": "Tool call:\n"
+        }
+
+        text = ""
+        for _, row in prompt_telemetry.loc[docs_to_index].iterrows():
+            event_text = row['text'].replace("\n", " ").strip()
+            if event_text:
+                text += prefix_pre_event_type.get(row['event_type'], "") + row['text'] + "\n\n"
+
+        doc = {
+            "id": f"{session_id}_{prompt_id}",
+            "transcript": "text",
+            "prompt_id": prompt_id,
+            "session_id": session_id,
+            "prompt_timestamp": prompt_telemetry['timestamp'].min()
+        }
+        yield doc
