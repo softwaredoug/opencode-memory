@@ -39,6 +39,7 @@ def _get_nested(data: Mapping[str, Any], path: tuple[str | int, ...]) -> Any:
 def _extract_session_id(event_dict: dict) -> str | None:
     """Extract the session ID from a telemetry event dictionary."""
     paths = (
+        ("session_id",),
         ("event", "properties", "sessionID"),
         ("input", "sessionID"),
     )
@@ -85,6 +86,25 @@ def _command(event_dict: dict) -> str | None:
             return value
 
 
+def _agent_md_text(event_dict: dict | float) -> str | None:
+    if not isinstance(event_dict, dict):
+        return None
+    try:
+        return f"""Project: {event_dict['path']},
+AGENTS.md:\n
+{event_dict['agents_md']}"""
+    except KeyError:
+        return None
+
+
+def _hydrate_system_prompts(telemetry: pd.DataFrame) -> pd.DataFrame:
+    """Extract system prompts from telemetry."""
+    mask = telemetry['event_type'] == 'system_prompt'
+    project_metadata = telemetry.get('project_metadata', pd.Series(index=telemetry.index))
+    telemetry.loc[mask, 'text'] = project_metadata[mask].fillna({}).apply(_agent_md_text)
+    return telemetry
+
+
 def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
     """Fill in missing session IDs by propagating the last known session ID."""
     telemetry = telemetry.sort_values(by='timestamp').reset_index(drop=True)
@@ -93,34 +113,58 @@ def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
     telemetry['tool_name'] = telemetry['payload'].apply(_tool_names)
     telemetry['command'] = telemetry['payload'].apply(_command)
     telemetry['text'] = telemetry['payload'].apply(_text_payload)
+    telemetry['text'] = telemetry['text'].fillna(telemetry['command'])
 
+    # Forward fill prompt_id down
     telemetry['prompt_id'] = telemetry.groupby("session_id")['prompt_id'].ffill()
+    telemetry = _hydrate_system_prompts(telemetry)
+
+    # But system prompt starts a session, that is its own prompt_id
     return telemetry
 
 
-def parse_telemetry(events=['system_prompt', 'prompt', 'tool_result', 'assistant_text']) -> pd.DataFrame:
+def parse_telemetry(path: Path | str = TELEMETRY_PATH,
+                    events=['system_prompt', 'prompt', 'tool_result', 'assistant_text']) -> pd.DataFrame:
     """Parse the telemetry JSONL file into a DataFrame."""
-    if not TELEMETRY_PATH.exists():
-        raise FileNotFoundError(f"Telemetry file not found at {TELEMETRY_PATH}")
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Telemetry file not found at {path}")
 
-    telemetry = _hydrate(pd.read_json(TELEMETRY_PATH, lines=True))
+    telemetry = _hydrate(pd.read_json(path, lines=True))
     telemetry = telemetry[telemetry['event_type'].isin(events)]
     assert isinstance(telemetry, pd.DataFrame)
 
     return telemetry
 
 
-def prompt_docs() -> Iterator[dict]:
+def prompt_docs(path: Path | str = TELEMETRY_PATH) -> Iterator[dict]:
     """Flattened prompt text as a single search document."""
-    telemetry = parse_telemetry(events=['system_prompt', 'prompt', 'assistant_text'])
+    telemetry = parse_telemetry(path=path,
+                                events=['system_prompt', 'prompt', 'assistant_text', 'tool_result', 'tool_call'])
+
+    # System prompts give metadata about the repo, task etc through AGENTS.md files
+    # and what-not
+    # Even though the system repeats them, I logically make one per session
+    system_prompts = telemetry[telemetry['event_type'] == 'system_prompt'].groupby('session_id').first()
+    for session_id, row in system_prompts.iterrows():
+        yield {
+            "id": f"{session_id}_system_prompt",
+            "transcript": row['text'] if pd.notna(row['text']) else "",
+            "prompt_id": f"{session_id}_system_prompt",  # intentional
+            "session_id": session_id,
+            "prompt_timestamp": row['timestamp']
+        }
+
+    telemetry = telemetry[telemetry['event_type'] != 'system_prompt']
     prompt_ids = telemetry['prompt_id'].unique()
     for prompt_id in prompt_ids:
         prompt_telemetry = telemetry[telemetry['prompt_id'] == prompt_id]
+        if len(prompt_telemetry) == 0:
+            continue
         session_id = prompt_telemetry['session_id'].iloc[0]
         # Concat all text to get text for the prompt document
         docs_to_index = prompt_telemetry['text'].drop_duplicates().dropna().index
         prefix_pre_event_type = {
-            "system_prompt": "System prompt:\n",
             "prompt": "User:\n",
             "assistant_text": "Assistant:\n",
             "tool_result": "Tool result:\n",
@@ -135,7 +179,7 @@ def prompt_docs() -> Iterator[dict]:
 
         doc = {
             "id": f"{session_id}_{prompt_id}",
-            "transcript": "text",
+            "transcript": text,
             "prompt_id": prompt_id,
             "session_id": session_id,
             "prompt_timestamp": prompt_telemetry['timestamp'].min()

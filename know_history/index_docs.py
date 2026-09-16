@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import turbopuffer
 from turbopuffer.types.row_param import RowParam
-from tubropuffer.types import NamespaceQueryResponse
+from turbopuffer.types import NamespaceQueryResponse
 import os
 from typing import Iterator
 from itertools import batched
@@ -81,6 +81,10 @@ class TurboPufferIndex:
                             "type": "string",
                             "filterable": True
                         },
+                        "project_path": {
+                            "type": "string",
+                            "filterable": True
+                        },
                         "prompt_id": {
                             "type": "string",
                             "filterable": True
@@ -130,3 +134,4 @@ def index_docs(force=False, batch_size=100):
     """
     indexer = TurboPufferIndex()
     indexer.index_docs(docs=prompt_docs(), force=force, batch_size=batch_size)
+    return indexer
