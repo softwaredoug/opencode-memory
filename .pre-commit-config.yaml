@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: flake8
+        name: flake8
+        entry: uv run flake8 know_history tests main.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
