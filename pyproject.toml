@@ -16,7 +16,7 @@ dependencies = [
 
 [project.scripts]
 search_opencode_history = "know_history.search:main"
-index_opencode_history = "know_history.daemon:main"
+opencode_history = "know_history.daemon:main"
 
 [tool.uv]
 package = true
