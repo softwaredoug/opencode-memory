@@ -1,13 +1,15 @@
 from pathlib import Path
+from datetime import datetime, timedelta
 
 from know_history.parse_telemetry import prompt_docs
 
 
-FIXTURE = Path(__file__).parent / "fixtures" / "telemetry.jsonl"
+fixture_path = Path(__file__).parent / "fixtures"
 
 
 def test_prompt_docs_separates_system_prompts_from_normal_prompts():
-    docs = list(prompt_docs(FIXTURE))
+    docs = prompt_docs(fixture_path)
+    docs = list(docs)
 
     system_docs = [doc for doc in docs if doc["prompt_id"].endswith("_system_prompt")]
     normal_docs = [doc for doc in docs if not doc["prompt_id"].endswith("_system_prompt")]
@@ -22,7 +24,9 @@ def test_prompt_docs_separates_system_prompts_from_normal_prompts():
 
 
 def test_prompt_docs_loads_prompt_metadata_and_event_text():
-    docs = list(prompt_docs(FIXTURE))
+    docs = prompt_docs(fixture_path)
+    docs = list(docs)
+
     prompt_doc = next(
         doc
         for doc in docs
@@ -36,3 +40,26 @@ def test_prompt_docs_loads_prompt_metadata_and_event_text():
     assert "Tool call:\n" in prompt_doc["transcript"]
     assert "Tool result:\n" in prompt_doc["transcript"]
     assert "plugin/telemetry.js" in prompt_doc["transcript"]
+
+
+def test_prompt_selects_for_timestamp():
+    timestamp = "2026-09-17T00:00:00Z"
+    ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    docs = prompt_docs(fixture_path, last_index_time=ts)
+
+    one_day_before = ts - timedelta(days=1)
+
+    for doc in docs:
+        doc_ts = doc['prompt_timestamp']
+        assert doc_ts >= one_day_before
+
+
+def test_prompt_with_timestamp_smaller_than_without():
+    timestamp = "2026-09-17T00:00:00Z"
+    ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    docs = prompt_docs(fixture_path, last_index_time=ts)
+    docs = list(docs)
+    docs_no_ts = prompt_docs(fixture_path)
+    docs_no_ts = list(docs_no_ts)
+
+    assert len(docs) < len(docs_no_ts)

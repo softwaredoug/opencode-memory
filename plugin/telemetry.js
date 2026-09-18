@@ -2,16 +2,26 @@ import os from "node:os"
 import path from "node:path"
 import { appendFile, mkdir, readFile } from "node:fs/promises"
 
-const telemetryFile =
-  process.env.OPENCODE_TELEMETRY_FILE ??
-  path.join(os.homedir(), ".local", "share", "opencode", "telemetry.jsonl")
+const telemetryDirectory = path.join(
+  os.homedir(),
+  ".local",
+  "share",
+  "opencode",
+)
+const telemetryFileOverride = process.env.OPENCODE_TELEMETRY_FILE
 
 let directoryReady
 let writeQueue = Promise.resolve()
 const promptIds = new Map()
 let projectMetadata = null
 
-async function ensureDirectory() {
+function telemetryFileFor(timestamp) {
+  if (telemetryFileOverride) return telemetryFileOverride
+  const date = timestamp.toISOString().slice(0, 10)
+  return path.join(telemetryDirectory, `${date}-telemetry.jsonl`)
+}
+
+async function ensureDirectory(telemetryFile) {
   if (!directoryReady) {
     directoryReady = mkdir(path.dirname(telemetryFile), { recursive: true })
   }
@@ -34,9 +44,11 @@ function serialize(value) {
 }
 
 function writeEvent(eventType, data) {
+  const timestamp = new Date()
+  const telemetryFile = telemetryFileFor(timestamp)
   const record = {
     event_type: eventType,
-    timestamp: new Date().toISOString(),
+    timestamp: timestamp.toISOString(),
     session_id: data.input?.sessionID ?? null,
     call_id: data.input?.callID ?? null,
     project_metadata: projectMetadata,
@@ -57,7 +69,7 @@ function writeEvent(eventType, data) {
   // Serialize writes so concurrent tool calls cannot interleave their lines.
   writeQueue = writeQueue
     .then(async () => {
-      await ensureDirectory()
+      await ensureDirectory(telemetryFile)
       await appendFile(telemetryFile, line, "utf8")
     })
     .catch((error) => {

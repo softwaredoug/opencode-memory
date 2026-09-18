@@ -3,9 +3,12 @@ from pathlib import Path
 from pydantic import BaseModel
 from collections.abc import Mapping, Sequence
 from typing import Any, Iterator
+from datetime import datetime, timedelta, timezone
 
 
-TELEMETRY_PATH = Path.home() / ".local" / "share" / "opencode" / "telemetry.jsonl"
+TELEMETRY_PATH = Path.home() / ".local" / "share" / "opencode"
+
+MIN_UTC_TIMESTAMP = datetime(1970, 6, 1, tzinfo=timezone.utc)
 
 
 class ChatEvent(BaseModel):
@@ -123,24 +126,50 @@ def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
     return telemetry
 
 
-def parse_telemetry(path: Path | str = TELEMETRY_PATH,
-                    events=['system_prompt', 'prompt', 'tool_result', 'assistant_text']) -> pd.DataFrame:
+def _parse_telemetry(telemetry: pd.DataFrame,
+                     events=['system_prompt', 'prompt', 'tool_result', 'assistant_text']) -> pd.DataFrame:
     """Parse the telemetry JSONL file into a DataFrame."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Telemetry file not found at {path}")
-
-    telemetry = _hydrate(pd.read_json(path, lines=True))
+    telemetry = _hydrate(telemetry)
     telemetry = telemetry[telemetry['event_type'].isin(events)]
     assert isinstance(telemetry, pd.DataFrame)
 
     return telemetry
 
 
-def prompt_docs(path: Path | str = TELEMETRY_PATH) -> Iterator[dict]:
+def _load_telemetry(path: Path,
+                    last_index_time: datetime = MIN_UTC_TIMESTAMP) -> pd.DataFrame | None:
+    """Load telemetry that we care to process."""
+    # Go back a day to get any overtlaps
+    if not path.exists():
+        raise FileNotFoundError(f"Telemetry file not found at {path}")
+
+    last_index_time = last_index_time - timedelta(days=1)
+    first_day_formatted = last_index_time.strftime("%Y-%m-%d")
+    dataframes = []
+    last_index_time = last_index_time.astimezone(timezone.utc)
+    for telemetry_path in path.glob("*.jsonl"):
+        basename = telemetry_path.stem
+        timestamp_yyyymmdd = basename.replace('-telemetry', '')
+        timestamp = datetime.strptime(timestamp_yyyymmdd, "%Y-%m-%d").astimezone(timezone.utc)
+        if timestamp_yyyymmdd == first_day_formatted:
+            df = pd.read_json(telemetry_path, lines=True)
+            dataframes.append(df)
+        elif timestamp >= last_index_time:
+            df = pd.read_json(telemetry_path, lines=True)
+            dataframes.append(df)
+    return pd.concat(dataframes, ignore_index=True) if dataframes else None
+
+
+def prompt_docs(path:
+                Path | str = TELEMETRY_PATH,
+                last_index_time: datetime = MIN_UTC_TIMESTAMP) -> Iterator[dict]:
     """Flattened prompt text as a single search document."""
-    telemetry = parse_telemetry(path=path,
-                                events=['system_prompt', 'prompt', 'assistant_text', 'tool_result', 'tool_call'])
+    path = Path(path)
+    telemetry = _load_telemetry(path=path, last_index_time=last_index_time)
+    if telemetry is None or telemetry.empty:
+        return []
+    telemetry = _parse_telemetry(telemetry,
+                                 events=['system_prompt', 'prompt', 'assistant_text', 'tool_result', 'tool_call'])
 
     # System prompts give metadata about the repo, task etc through AGENTS.md files
     # and what-not
@@ -182,6 +211,6 @@ def prompt_docs(path: Path | str = TELEMETRY_PATH) -> Iterator[dict]:
             "transcript": text,
             "prompt_id": prompt_id,
             "session_id": session_id,
-            "prompt_timestamp": prompt_telemetry['timestamp'].min()
+            "prompt_timestamp": prompt_telemetry['timestamp'].min().to_pydatetime().replace(tzinfo=timezone.utc)
         }
         yield doc
