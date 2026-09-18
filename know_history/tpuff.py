@@ -3,6 +3,7 @@ import turbopuffer
 from turbopuffer.types.row_param import RowParam
 from turbopuffer.types import NamespaceQueryResponse
 import os
+import sys
 from typing import Iterator
 from itertools import batched
 from datetime import datetime, timezone
@@ -133,7 +134,8 @@ class TurboPufferIndex:
         """
         Query TurboPuffer for context mentioning the given phrase
         """
-        print(f"Querying TurboPuffer for top {top_k} results mentioning terms: {phrase}")
+        print(f"Querying TurboPuffer for top {top_k} results mentioning terms: {phrase}",
+              file=sys.stderr)
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
         ns_results = self.ns.query(
