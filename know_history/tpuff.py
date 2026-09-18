@@ -7,8 +7,6 @@ from typing import Iterator
 from itertools import batched
 from datetime import datetime, timezone
 
-from .parse_telemetry import prompt_docs
-
 
 TPUF_API_KEY = os.getenv("TPUF_API_KEY")
 
@@ -81,11 +79,13 @@ class TurboPufferIndex:
 
     def index_docs(self,
                    docs: Iterator[dict],
+                   last_index_time: datetime | None = None,
                    batch_size=100):
         """
         Index the documents into TurboPuffer.
         """
-        last_index_time = self.last_index_time()
+        if last_index_time is None:
+            last_index_time = self.last_index_time()
         for batch in docs_batch(docs, batch_size=batch_size,
                                 last_index_time=last_index_time):
             self.ns.write(
@@ -152,14 +152,3 @@ class TurboPufferIndex:
             )
         )
         return ns_results
-
-
-def index_docs(force=False, batch_size=100):
-    """
-    Index the prompt documents into TurboPuffer.
-    """
-    indexer = TurboPufferIndex()
-    last_index_time=indexer.last_index_time()
-    indexer.index_docs(docs=prompt_docs(),
-                       batch_size=batch_size)
-    return indexer

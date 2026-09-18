@@ -165,9 +165,11 @@ def _load_telemetry(path: Path,
 
 def prompt_docs(path:
                 Path | str = TELEMETRY_PATH,
-                last_index_time: datetime = MIN_UTC_TIMESTAMP) -> Iterator[dict]:
+                last_index_time: datetime | None = None) -> Iterator[dict]:
     """Flattened prompt text as a single search document."""
     path = Path(path)
+    if last_index_time is None:
+        last_index_time = MIN_UTC_TIMESTAMP
     telemetry = _load_telemetry(path=path, last_index_time=last_index_time)
     if telemetry is None or telemetry.empty:
         return []
