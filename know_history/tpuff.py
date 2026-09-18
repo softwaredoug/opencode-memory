@@ -129,7 +129,7 @@ class TurboPufferIndex:
         count = result.performance.approx_namespace_size
         print(f"Indexed {count} documents into TurboPuffer.")
 
-    def context_mentioning_terms(self, phrase: list[str], top_k=5) -> NamespaceQueryResponse:
+    def context_mentioning_terms(self, phrase: str, top_k=5) -> NamespaceQueryResponse:
         """
         Query TurboPuffer for context mentioning the given phrase
         """
@@ -141,14 +141,14 @@ class TurboPufferIndex:
                 "Sum",
                 (
                     ("transcript", "BM25", phrase),
+                    (
+                        "Product",
+                        10.0,   # boost phrase matches
+                        ("transcript", "ContainsTokenSequence", phrase)
+                    )
                 )
             ),
             top_k=top_k,
-            include_attributes=["content"],
-            filters=(
-                "Or", (
-                    ("transcript", "ContainsTokenSequence", phrase),
-                ),
-            )
+            include_attributes=["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
         )
         return ns_results
