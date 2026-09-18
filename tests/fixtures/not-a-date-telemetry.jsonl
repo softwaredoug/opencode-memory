@@ -1,0 +1,1 @@
+{"event_type":"prompt","timestamp":"2026-09-13T12:00:00.000Z","session_id":"ses_canary_bad_name","call_id":null,"payload":{"input":{"sessionID":"ses_canary_bad_name"},"output":{"message":{"id":"msg_CANARY_BAD_FILENAME","role":"user","sessionID":"ses_canary_bad_name"},"parts":[{"type":"text","text":"CANARY_BAD_FILENAME"}]}}}

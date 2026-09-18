@@ -63,3 +63,11 @@ def test_prompt_with_timestamp_smaller_than_without():
     docs_no_ts = list(docs_no_ts)
 
     assert len(docs) < len(docs_no_ts)
+
+
+def test_prompt_docs_ignores_nonconforming_fixture_files():
+    docs = list(prompt_docs(fixture_path))
+    transcripts = "\n".join(doc["transcript"] for doc in docs)
+
+    assert "CANARY_BAD_FILENAME" not in transcripts
+    assert "CANARY_IGNORED_TEXT_FILE" not in transcripts

@@ -150,7 +150,10 @@ def _load_telemetry(path: Path,
     for telemetry_path in path.glob("*.jsonl"):
         basename = telemetry_path.stem
         timestamp_yyyymmdd = basename.replace('-telemetry', '')
-        timestamp = datetime.strptime(timestamp_yyyymmdd, "%Y-%m-%d").astimezone(timezone.utc)
+        try:
+            timestamp = datetime.strptime(timestamp_yyyymmdd, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
         if timestamp_yyyymmdd == first_day_formatted:
             df = pd.read_json(telemetry_path, lines=True)
             dataframes.append(df)
