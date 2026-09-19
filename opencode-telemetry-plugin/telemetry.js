@@ -124,12 +124,23 @@ async function hasIgnoreFile(directory) {
   }
 }
 
-export const TracePlugin = async ({ directory } = {}) => {
-  hasIgnore = await hasIgnoreFile(directory)
+export const TracePlugin = async ({
+  directory,
+  writeEvent: writeEventImpl = writeEvent,
+} = {}) => {
+  let hasIgnore = await hasIgnoreFile(directory)
 
   if (hasIgnore) return {}
 
   projectMetadata = await loadProjectMetadata(directory)
+
+  // double check the ignore file, and if suddenly it has appeared,
+  // we begin ignoring
+  let writeEventGuardedImpl = async (eventType, data) => {
+    hasIgnore = await hasIgnoreFile(directory)
+    if (hasIgnore) return
+    await writeEventImpl(eventType, data)
+  }
 
   return {
     "chat.message": async (input, output) => {
@@ -137,7 +148,7 @@ export const TracePlugin = async ({ directory } = {}) => {
       const promptId = message?.id ?? input.messageID ?? null
       if (input.sessionID && promptId) promptIds.set(input.sessionID, promptId)
 
-      await writeEvent("prompt", {
+      await writeEventGuardedImpl("prompt", {
         input,
         output,
         prompt_id: promptId,
@@ -145,7 +156,7 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "experimental.chat.system.transform": async (input, output) => {
-      await writeEvent("system_prompt", {
+      await writeEventGuardedImpl("system_prompt", {
         input,
         prompt_id: input.sessionID ? promptIds.get(input.sessionID) ?? null : null,
         system: output.system,
@@ -154,14 +165,14 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.before": async (input, output) => {
-      await writeEvent("tool_call", {
+      await writeEventGuardedImpl("tool_call", {
         input,
         output,
         prompt_id: promptIds.get(input.sessionID) ?? null,
       })
 
       if (input.tool === "read" && isAgentsFile(output.args?.filePath)) {
-        await writeEvent("instruction_read", {
+        await writeEventGuardedImpl("instruction_read", {
           phase: "before",
           input,
           output,
@@ -171,14 +182,14 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.after": async (input, output) => {
-      await writeEvent("tool_result", {
+      await writeEventGuardedImpl("tool_result", {
         input,
         output,
         prompt_id: promptIds.get(input.sessionID) ?? null,
       })
 
       if (input.tool === "read" && isAgentsFile(input.args?.filePath)) {
-        await writeEvent("instruction_read", {
+        await writeEventGuardedImpl("instruction_read", {
           phase: "after",
           input,
           output,
@@ -199,14 +210,14 @@ export const TracePlugin = async ({ directory } = {}) => {
         const partType = part?.type
         if (partType !== "reasoning" && partType !== "text") return
 
-        await writeEvent(partType === "reasoning" ? "reasoning" : "assistant_text", {
+        await writeEventImpl(partType === "reasoning" ? "reasoning" : "assistant_text", {
           event,
           prompt_id,
         })
         return
       }
 
-      await writeEvent("message_updated", {
+      await writeEventImpl("message_updated", {
         event,
         prompt_id,
       })

@@ -19,3 +19,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: plugin-test
+        name: plugin test
+        entry: npm test
+        language: system
+        pass_filenames: false
+        always_run: true
