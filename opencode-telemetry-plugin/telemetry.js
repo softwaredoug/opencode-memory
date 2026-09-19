@@ -125,12 +125,22 @@ async function hasIgnoreFile(directory) {
 }
 
 export const TracePlugin = async ({
+  client,
   directory,
   writeEvent: writeEventImpl = writeEvent,
 } = {}) => {
   let hasIgnore = await hasIgnoreFile(directory)
 
-  if (hasIgnore) return {}
+  if (hasIgnore) {
+    await client.tui.showToast({
+      body: {
+        message: "Telemetry is disabled for this project due to the presence of a .opencode-telemetry-ignore file.",
+        variant: "info",
+      },
+    });
+
+    return {}
+  }
 
   projectMetadata = await loadProjectMetadata(directory)
 
