@@ -14,6 +14,7 @@ let directoryReady
 let writeQueue = Promise.resolve()
 const promptIds = new Map()
 let projectMetadata = null
+let hasIgnore = false
 
 function telemetryFileFor(timestamp) {
   if (telemetryFileOverride) return telemetryFileOverride
@@ -110,11 +111,27 @@ async function loadProjectMetadata(directory) {
   return { path: projectPath, agents_md }
 }
 
+
+async function hasIgnoreFile(directory) {
+  const projectPath = typeof directory === "string" ? directory : null
+  if (!projectPath) return false;
+
+  try {
+    await readFile(path.join(projectPath, ".opencode-telemetry-ignore"), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const TracePlugin = async ({ directory } = {}) => {
   projectMetadata = await loadProjectMetadata(directory)
+  hasIgnore = await hasIgnoreFile(directory)
 
   return {
     "chat.message": async (input, output) => {
+      if (hasIgnore) return;
+
       const message = output.message
       const promptId = message?.id ?? input.messageID ?? null
       if (input.sessionID && promptId) promptIds.set(input.sessionID, promptId)
@@ -127,6 +144,8 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "experimental.chat.system.transform": async (input, output) => {
+      if (hasIgnore) return;
+
       await writeEvent("system_prompt", {
         input,
         prompt_id: input.sessionID ? promptIds.get(input.sessionID) ?? null : null,
@@ -136,6 +155,8 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.before": async (input, output) => {
+      if (hasIgnore) return;
+
       await writeEvent("tool_call", {
         input,
         output,
@@ -153,6 +174,8 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.after": async (input, output) => {
+      if (hasIgnore) return;
+
       await writeEvent("tool_result", {
         input,
         output,
@@ -170,6 +193,8 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     event: async ({ event }) => {
+      if (hasIgnore) return;
+
       if (event.type !== "message.part.updated" && event.type !== "message.updated") return
 
       const data = eventData(event)
