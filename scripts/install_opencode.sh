@@ -24,7 +24,7 @@ case "${1:-}" in
 esac
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_file="$repo_dir/plugin/telemetry.js"
+source_file="$repo_dir/opencode-telemetry-plugin/telemetry.js"
 config_dir="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 plugin_dir="$config_dir/plugins"
 target_file="$plugin_dir/telemetry.js"

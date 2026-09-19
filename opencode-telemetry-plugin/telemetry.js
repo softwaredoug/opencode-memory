@@ -125,13 +125,14 @@ async function hasIgnoreFile(directory) {
 }
 
 export const TracePlugin = async ({ directory } = {}) => {
-  projectMetadata = await loadProjectMetadata(directory)
   hasIgnore = await hasIgnoreFile(directory)
+
+  if (hasIgnore) return {}
+
+  projectMetadata = await loadProjectMetadata(directory)
 
   return {
     "chat.message": async (input, output) => {
-      if (hasIgnore) return;
-
       const message = output.message
       const promptId = message?.id ?? input.messageID ?? null
       if (input.sessionID && promptId) promptIds.set(input.sessionID, promptId)
@@ -144,8 +145,6 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "experimental.chat.system.transform": async (input, output) => {
-      if (hasIgnore) return;
-
       await writeEvent("system_prompt", {
         input,
         prompt_id: input.sessionID ? promptIds.get(input.sessionID) ?? null : null,
@@ -155,8 +154,6 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.before": async (input, output) => {
-      if (hasIgnore) return;
-
       await writeEvent("tool_call", {
         input,
         output,
@@ -174,8 +171,6 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     "tool.execute.after": async (input, output) => {
-      if (hasIgnore) return;
-
       await writeEvent("tool_result", {
         input,
         output,
@@ -193,8 +188,6 @@ export const TracePlugin = async ({ directory } = {}) => {
     },
 
     event: async ({ event }) => {
-      if (hasIgnore) return;
-
       if (event.type !== "message.part.updated" && event.type !== "message.updated") return
 
       const data = eventData(event)
