@@ -2,14 +2,15 @@ from sentence_transformers import SentenceTransformer
 import turbopuffer
 from turbopuffer.types.row_param import RowParam
 from turbopuffer.types import NamespaceQueryResponse
+import logging
 import os
-import sys
 from typing import Iterator
 from itertools import batched
 from datetime import datetime, timezone
 
 
 TPUF_API_KEY = os.getenv("TPUF_API_KEY")
+logger = logging.getLogger(__name__)
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -19,7 +20,12 @@ def ns_exists(tpuf, ns_name, expected_count=1):
     try:
         metadata = ns.metadata()
         if metadata.approx_row_count < expected_count:
-            print(f"Namespace {ns_name} exists but has fewer rows ({metadata.approx_row_count}) than expected ({expected_count}).")
+            logger.warning(
+                "Namespace %s exists but has fewer rows (%s) than expected (%s).",
+                ns_name,
+                metadata.approx_row_count,
+                expected_count,
+            )
             return False
     except turbopuffer.NotFoundError:
         return False
@@ -121,7 +127,7 @@ class TurboPufferIndex:
                         "filterable": True
                     },
                     "is_system_prompt": {
-                        "type": "boolean",
+                        "type": "bool",
                         "filterable": True
                     }
                 }
@@ -132,14 +138,17 @@ class TurboPufferIndex:
             limit=1,
         )
         count = result.performance.approx_namespace_size
-        print(f"Indexed {count} documents into TurboPuffer.")
+        logger.info("Indexed %s documents into TurboPuffer.", count)
 
     def context_mentioning_terms(self, phrase: str, top_k=5) -> NamespaceQueryResponse:
         """
         Query TurboPuffer for context mentioning the given phrase
         """
-        print(f"Querying TurboPuffer for top {top_k} results mentioning terms: {phrase}",
-              file=sys.stderr)
+        logger.info(
+            "Querying TurboPuffer for top %s results mentioning terms: %s",
+            top_k,
+            phrase,
+        )
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
         ns_results = self.ns.query(
