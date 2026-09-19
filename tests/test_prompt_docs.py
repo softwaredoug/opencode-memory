@@ -1,5 +1,8 @@
 from pathlib import Path
 from datetime import datetime, timedelta
+import pytest
+from tempfile import TemporaryDirectory
+import json
 
 from know_history.parse_telemetry import prompt_docs
 
@@ -71,3 +74,68 @@ def test_prompt_docs_ignores_nonconforming_fixture_files():
 
     assert "CANARY_BAD_FILENAME" not in transcripts
     assert "CANARY_IGNORED_TEXT_FILE" not in transcripts
+
+
+@pytest.fixture
+def interleaved_telemetry():
+    with TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        interleaved = [
+            {
+                "event_type": "prompt",
+                "timestamp": "2026-09-19T10:00:00.000Z",
+                "session_id": "ses_A",
+                "project_metadata": {"path": "/tmp/project-a", "agents_md": None},
+                "payload": {
+                    "input": {"sessionID": "ses_A"},
+                    "output": {
+                        "message": {"id": "msg_A1"},
+                        "parts": [{"text": "Prompt A"}],
+                    },
+                },
+            },
+            {
+                "event_type": "prompt",
+                "timestamp": "2026-09-19T10:00:01.000Z",
+                "session_id": "ses_B",
+                "project_metadata": {"path": "/tmp/project-b", "agents_md": None},
+                "payload": {
+                    "input": {"sessionID": "ses_B"},
+                    "output": {
+                        "message": {"id": "msg_B1"},
+                        "parts": [{"text": "Prompt B"}],
+                    },
+                },
+            },
+            {
+                "event_type": "tool_result",
+                "timestamp": "2026-09-19T10:00:02.000Z",
+                "session_id": "ses_A",
+                "project_metadata": {"path": "/tmp/project-a", "agents_md": None},
+                "payload": {
+                    "input": {"sessionID": "ses_A", "tool": "bash"},
+                    "output": {"output": "Result A"},
+                },
+            },
+            {
+                "event_type": "tool_result",
+                "timestamp": "2026-09-19T10:00:03.000Z",
+                "session_id": "ses_B",
+                "project_metadata": {"path": "/tmp/project-b", "agents_md": None},
+                "payload": {
+                    "input": {"sessionID": "ses_B", "tool": "bash"},
+                    "output": {"output": "Result B"},
+                },
+            },
+        ]
+        telemetry_file = temp_dir / "2026-09-19-telemetry.jsonl"
+        with telemetry_file.open("w") as f:
+            for event in interleaved:
+                f.write(json.dumps(event) + "\n")
+        yield temp_dir
+
+
+def test_interleaved_assigns_prompt_id_correctly(interleaved_telemetry):
+    docs = list(prompt_docs(interleaved_telemetry))
+    assert docs[0]['prompt_id'] == 'msg_A1'
+    assert docs[1]['prompt_id'] == 'msg_B1'
