@@ -108,6 +108,23 @@ def _hydrate_system_prompts(telemetry: pd.DataFrame) -> pd.DataFrame:
     return telemetry
 
 
+def _session_id_project_paths(telemetry: pd.DataFrame) -> pd.Series:
+    """Get a dict from session id -> project path for all sessions in the telemetry."""
+    mask = telemetry['event_type'] == 'system_prompt'
+    system_metadata = telemetry[mask].groupby('session_id')['project_metadata'].first()
+
+    def extract_path(project_metadata: dict | float) -> Path | None:
+        if not isinstance(project_metadata, dict):
+            return None
+        path_str = project_metadata.get('path')
+        if path_str is None:
+            return None
+        return Path(path_str)
+
+    system_meta_to_path = system_metadata.map(extract_path)
+    return system_meta_to_path
+
+
 def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
     """Fill in missing session IDs by propagating the last known session ID."""
     telemetry = telemetry.sort_values(by='timestamp').reset_index(drop=True)
@@ -117,6 +134,9 @@ def _hydrate(telemetry: pd.DataFrame) -> pd.DataFrame:
     telemetry['command'] = telemetry['payload'].apply(_command)
     telemetry['text'] = telemetry['payload'].apply(_text_payload)
     telemetry['text'] = telemetry['text'].fillna(telemetry['command'])
+
+    sess_id_to_path = _session_id_project_paths(telemetry)
+    telemetry['project_path'] = telemetry['session_id'].map(sess_id_to_path)
 
     # Forward fill prompt_id down
     telemetry['prompt_id'] = telemetry.groupby("session_id")['prompt_id'].ffill()
@@ -186,7 +206,9 @@ def prompt_docs(path:
             "transcript": row['text'] if pd.notna(row['text']) else "",
             "prompt_id": f"{session_id}_system_prompt",  # intentional
             "session_id": session_id,
-            "prompt_timestamp": row['timestamp']
+            "prompt_timestamp": row['timestamp'],
+            "project_path": row['project_path'] if pd.notna(row['project_path']) else None,
+            "is_system_prompt": True
         }
 
     telemetry = telemetry[telemetry['event_type'] != 'system_prompt']
@@ -216,6 +238,8 @@ def prompt_docs(path:
             "transcript": text,
             "prompt_id": prompt_id,
             "session_id": session_id,
-            "prompt_timestamp": prompt_telemetry['timestamp'].min().to_pydatetime().replace(tzinfo=timezone.utc)
+            "prompt_timestamp": prompt_telemetry['timestamp'].min().to_pydatetime().replace(tzinfo=timezone.utc),
+            "project_path": prompt_telemetry['project_path'].iloc[0] if pd.notna(prompt_telemetry['project_path'].iloc[0]) else None,
+            "is_system_prompt": False
         }
         yield doc

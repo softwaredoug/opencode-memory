@@ -132,12 +132,16 @@ export const TracePlugin = async ({
   let hasIgnore = await hasIgnoreFile(directory)
 
   if (hasIgnore) {
-    await client.tui.showToast({
-      body: {
-        message: "Telemetry is disabled for this project due to the presence of a .opencode-telemetry-ignore file.",
-        variant: "info",
-      },
-    });
+    setTimeout(() => {
+      void client.tui.showToast({
+        body: {
+          message: "Telemetry is disabled for this project due to the presence of a .opencode-telemetry-ignore file.",
+          variant: "info",
+        },
+      }).catch((error) => {
+        console.error("[telemetry] failed to show ignore notification:", error)
+      })
+    }, 5000)
 
     return {}
   }

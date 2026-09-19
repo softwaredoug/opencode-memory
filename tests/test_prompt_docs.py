@@ -82,10 +82,35 @@ def interleaved_telemetry():
         temp_dir = Path(temp_dir)
         interleaved = [
             {
+                "event_type": "system_prompt",
+                "timestamp": "2026-09-19T10:00:00.000Z",
+                "session_id": "ses_A",
+                "project_metadata": {"path": "/tmp/project-a", "agents_md": "AGENTSMD content A"},
+                "payload": {
+                    "input": {"sessionID": "ses_A"},
+                    "output": {
+                        "message": {"id": "msg_A1"},
+                        "parts": [{"text": "Prompt A"}],
+                    },
+                },
+            },
+            {
+                "event_type": "system_prompt",
+                "timestamp": "2026-09-19T10:00:00.000Z",
+                "session_id": "ses_B",
+                "project_metadata": {"path": "/tmp/project-b", "agents_md": "AGENTSMD content B"},
+                "payload": {
+                    "input": {"sessionID": "ses_B"},
+                    "output": {
+                        "message": {"id": "msg_B1"},
+                        "parts": [{"text": "Prompt B"}],
+                    },
+                },
+            },
+            {
                 "event_type": "prompt",
                 "timestamp": "2026-09-19T10:00:00.000Z",
                 "session_id": "ses_A",
-                "project_metadata": {"path": "/tmp/project-a", "agents_md": None},
                 "payload": {
                     "input": {"sessionID": "ses_A"},
                     "output": {
@@ -98,7 +123,6 @@ def interleaved_telemetry():
                 "event_type": "prompt",
                 "timestamp": "2026-09-19T10:00:01.000Z",
                 "session_id": "ses_B",
-                "project_metadata": {"path": "/tmp/project-b", "agents_md": None},
                 "payload": {
                     "input": {"sessionID": "ses_B"},
                     "output": {
@@ -111,7 +135,6 @@ def interleaved_telemetry():
                 "event_type": "tool_result",
                 "timestamp": "2026-09-19T10:00:02.000Z",
                 "session_id": "ses_A",
-                "project_metadata": {"path": "/tmp/project-a", "agents_md": None},
                 "payload": {
                     "input": {"sessionID": "ses_A", "tool": "bash"},
                     "output": {"output": "Result A"},
@@ -121,7 +144,6 @@ def interleaved_telemetry():
                 "event_type": "tool_result",
                 "timestamp": "2026-09-19T10:00:03.000Z",
                 "session_id": "ses_B",
-                "project_metadata": {"path": "/tmp/project-b", "agents_md": None},
                 "payload": {
                     "input": {"sessionID": "ses_B", "tool": "bash"},
                     "output": {"output": "Result B"},
@@ -137,5 +159,11 @@ def interleaved_telemetry():
 
 def test_interleaved_assigns_prompt_id_correctly(interleaved_telemetry):
     docs = list(prompt_docs(interleaved_telemetry))
-    assert docs[0]['prompt_id'] == 'msg_A1'
-    assert docs[1]['prompt_id'] == 'msg_B1'
+    assert docs[0]['prompt_id'] == 'ses_A_system_prompt'
+    assert docs[1]['prompt_id'] == 'ses_B_system_prompt'
+
+
+def test_project_path_assigned_correctly(interleaved_telemetry):
+    docs = list(prompt_docs(interleaved_telemetry))
+    assert docs[0]['project_path'] == Path('/tmp/project-a')
+    assert docs[1]['project_path'] == Path('/tmp/project-b')

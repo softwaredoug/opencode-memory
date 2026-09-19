@@ -119,6 +119,10 @@ class TurboPufferIndex:
                     "prompt_timestamp": {
                         "type": "datetime",
                         "filterable": True
+                    },
+                    "is_system_prompt": {
+                        "type": "boolean",
+                        "filterable": True
                     }
                 }
             )

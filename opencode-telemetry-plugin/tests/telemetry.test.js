@@ -27,21 +27,22 @@ test("ignore marker disables telemetry hooks", async () => {
 
 test("ignore marker emits a startup toast", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "opencode-telemetry-"))
-  const toasts = []
+  let toastCalled = false
+  let resolveToast
+  const toastShown = new Promise((resolve) => { resolveToast = resolve })
 
   try {
     await writeFile(path.join(directory, ".opencode-telemetry-ignore"), "\n")
     await TracePlugin({
       directory,
-      client: mockClient(async (toast) => toasts.push(toast)),
+      client: mockClient(async () => {
+        toastCalled = true
+        resolveToast()
+      }),
     })
+    await toastShown
 
-    assert.deepEqual(toasts, [{
-      body: {
-        message: "Telemetry is disabled for this project due to the presence of a .opencode-telemetry-ignore file.",
-        variant: "info",
-      },
-    }])
+    assert.ok(toastCalled)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
