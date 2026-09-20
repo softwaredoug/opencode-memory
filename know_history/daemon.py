@@ -30,6 +30,10 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = Field(default=5, ge=1, le=50)
 
+    system_metadata: bool = Field(default=False,
+                                  description="Only include session metadata in results (AGENTS.md and repo info). Otherwise include all results.")
+    project_path: str | None = Field(default=None, description="Filter results to a specific project path.")
+
 
 def index_latest(force: bool = False):
     """Index the latest docs into TurboPuffer."""
@@ -61,7 +65,7 @@ def index(request: IndexRequest):
 def search(request: SearchRequest):
     """Search indexed history and return structured results."""
     indexer = TurboPufferIndex()
-    response = indexer.context_mentioning_terms(
+    response = indexer.search(
         phrase=request.query,
         top_k=request.top_k,
     )
@@ -75,7 +79,15 @@ def main():
         default=os.getenv("OPENCODE_HISTORY_SOCKET", str(DEFAULT_SOCKET_PATH)),
         help="Unix socket path for the service.",
     )
+    parser.add_argument(
+        "--index",
+        action="store_true",
+        default=False,
+        help="Index latest telemetry before starting the service.",
+    )
     args = parser.parse_args(argv[1:])
+    if args.index:
+        index_latest(force=False)
     socket_path = Path(args.socket).expanduser()
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():

@@ -10,6 +10,9 @@ from datetime import datetime, timezone
 
 
 TPUF_API_KEY = os.getenv("TPUF_API_KEY")
+if TPUF_API_KEY is None:
+    raise RuntimeError("TPUF_API_KEY environment variable is not set.")
+TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
 logger = logging.getLogger(__name__)
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -44,6 +47,7 @@ def docs_batch(docs: Iterator[dict],
         for doc, embedding in zip(batch, embeddings):
             doc['vector'] = embedding
             doc['prompt_timestamp'] = doc['prompt_timestamp'].isoformat()  # Convert datetime to ISO string
+            doc['project_path'] = str(doc['project_path']) if doc['project_path'] is not None else None
             converted_batch.append(RowParam(**doc))
         return converted_batch
 
@@ -62,7 +66,7 @@ class TurboPufferIndex:
             api_key=TPUF_API_KEY,
             region="gcp-us-central1"
         )
-        ns_name = "opencodetrace"
+        ns_name = TPUF_NAMESPACE
         self.ns = self.tpuf.namespace(ns_name)
         assert self.ns is not None
 
@@ -140,7 +144,10 @@ class TurboPufferIndex:
         count = result.performance.approx_namespace_size
         logger.info("Indexed %s documents into TurboPuffer.", count)
 
-    def context_mentioning_terms(self, phrase: str, top_k=5) -> NamespaceQueryResponse:
+    def search(self, phrase: str,
+               system_only: bool = False,
+               project_path: str | None = None,
+               top_k=5) -> NamespaceQueryResponse:
         """
         Query TurboPuffer for context mentioning the given phrase
         """
@@ -151,6 +158,14 @@ class TurboPufferIndex:
         )
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
+        filters = []
+        if system_only:
+            filters.append(("is_system_prompt", "Eq", True))
+        if project_path is not None:
+            filters.append(("project_path", "Eq", project_path))
+
+        filter_tuple = ("And", tuple(filters)) if filters else None
+
         ns_results = self.ns.query(
             rank_by=(
                 "Sum",
@@ -164,6 +179,7 @@ class TurboPufferIndex:
                 )
             ),
             top_k=top_k,
+            filters=filter_tuple if filter_tuple is not None else turbopuffer.omit,
             include_attributes=["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
         )
         return ns_results
