@@ -60,3 +60,8 @@ Installs opencode plugin, a daemon, and a search CLI
 ./scripts/install.sh
 ```
 
+## Extra info
+
+### Ignore directories
+
+Ignore directories by placing a file `opencode-telemetry-ignore` and your interactions won't be logged.
