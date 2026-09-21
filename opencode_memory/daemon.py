@@ -7,7 +7,7 @@ from pathlib import Path
 from sys import argv
 import asyncio
 from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 import uvicorn
 from fastapi import FastAPI
@@ -38,7 +38,8 @@ async def reindex_loop():
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    del _app
     task = asyncio.create_task(reindex_loop())
     try:
         yield

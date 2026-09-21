@@ -4,7 +4,7 @@ import pytest
 from tempfile import TemporaryDirectory
 import json
 
-from know_history.parse_telemetry import prompt_docs
+from opencode_memory.parse_telemetry import prompt_docs
 
 
 fixture_path = Path(__file__).parent / "fixtures"

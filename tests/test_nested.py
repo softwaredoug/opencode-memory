@@ -1,4 +1,4 @@
-from know_history.parse_telemetry import _get_nested
+from opencode_memory.parse_telemetry import _get_nested
 
 
 def test_get_nested():

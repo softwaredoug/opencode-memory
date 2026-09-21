@@ -15,14 +15,14 @@ dependencies = [
 ]
 
 [project.scripts]
-search_opencode_history = "know_history.search:main"
-opencode_history = "know_history.daemon:main"
+search_opencode_history = "opencode_memory.search:main"
+opencode_history = "opencode_memory.daemon:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools.packages.find]
-include = ["know_history*"]
+include = ["opencode_memory*"]
 
 [dependency-groups]
 dev = [
