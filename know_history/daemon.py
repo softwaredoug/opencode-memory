@@ -5,6 +5,7 @@ import os
 import stat
 from pathlib import Path
 from sys import argv
+import asyncio
 
 import uvicorn
 from fastapi import FastAPI
@@ -35,17 +36,17 @@ class SearchRequest(BaseModel):
     project_path: str | None = Field(default=None, description="Filter results to a specific project path.")
 
 
-def index_latest(force: bool = False):
+async def index_latest(force: bool = False):
     """Index the latest docs into TurboPuffer."""
     indexer = TurboPufferIndex()
-    last_index_time = indexer.last_index_time()
+    last_index_time = await indexer.last_index_time()
     if force:
         last_index_time = MIN_UTC_TIMESTAMP
         print("Force reindexing all docs into TurboPuffer.")
     else:
         print(f"Indexing telemetry after {last_index_time.isoformat()} into TurboPuffer.")
     docs = prompt_docs(last_index_time=last_index_time)
-    indexer.index_docs(docs)
+    await indexer.index_docs(docs)
 
 
 @app.get("/health")
@@ -55,17 +56,17 @@ def health():
 
 
 @app.post("/index")
-def index(request: IndexRequest):
+async def index(request: IndexRequest):
     """Index telemetry newer than the latest indexed prompt."""
-    index_latest(force=request.force)
+    await index_latest(force=request.force)
     return {"ok": True}
 
 
 @app.post("/search")
-def search(request: SearchRequest):
+async def search(request: SearchRequest):
     """Search indexed history and return structured results."""
     indexer = TurboPufferIndex()
-    response = indexer.search(
+    response = await indexer.search(
         phrase=request.query,
         top_k=request.top_k,
     )
@@ -87,7 +88,7 @@ def main():
     )
     args = parser.parse_args(argv[1:])
     if args.index:
-        index_latest(force=False)
+        asyncio.run(index_latest(force=False))
     socket_path = Path(args.socket).expanduser()
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():

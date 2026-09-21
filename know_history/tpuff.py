@@ -62,7 +62,7 @@ def docs_batch(docs: Iterator[dict],
 class TurboPufferIndex:
 
     def __init__(self):
-        self.tpuf = turbopuffer.Turbopuffer(
+        self.tpuf = turbopuffer.AsyncTurbopuffer(
             api_key=TPUF_API_KEY,
             region="gcp-us-central1"
         )
@@ -70,9 +70,9 @@ class TurboPufferIndex:
         self.ns = self.tpuf.namespace(ns_name)
         assert self.ns is not None
 
-    def last_index_time(self) -> datetime:
+    async def last_index_time(self) -> datetime:
         """Retrieve the newest doc from TurboPuffer."""
-        result = self.ns.query(
+        result = await self.ns.query(
             rank_by=("prompt_timestamp", "desc"),
             limit=1,
             include_attributes=["prompt_timestamp"],
@@ -88,18 +88,18 @@ class TurboPufferIndex:
         else:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    def index_docs(self,
-                   docs: Iterator[dict],
-                   last_index_time: datetime | None = None,
-                   batch_size=100):
+    async def index_docs(self,
+                         docs: Iterator[dict],
+                         last_index_time: datetime | None = None,
+                         batch_size=100):
         """
         Index the documents into TurboPuffer.
         """
         if last_index_time is None:
-            last_index_time = self.last_index_time()
+            last_index_time = await self.last_index_time()
         for batch in docs_batch(docs, batch_size=batch_size,
                                 last_index_time=last_index_time):
-            self.ns.write(
+            await self.ns.write(
                 upsert_rows=batch,
                 distance_metric="cosine_distance",
                 schema={
@@ -137,17 +137,17 @@ class TurboPufferIndex:
                 }
             )
 
-        result = self.ns.query(
+        result = await self.ns.query(
             rank_by=("id", "asc"),
             limit=1,
         )
         count = result.performance.approx_namespace_size
         logger.info("Indexed %s documents into TurboPuffer.", count)
 
-    def search(self, phrase: str,
-               system_only: bool = False,
-               project_path: str | None = None,
-               top_k=5) -> NamespaceQueryResponse:
+    async def search(self, phrase: str,
+                     system_only: bool = False,
+                     project_path: str | None = None,
+                     top_k=5) -> NamespaceQueryResponse:
         """
         Query TurboPuffer for context mentioning the given phrase
         """
@@ -166,7 +166,7 @@ class TurboPufferIndex:
 
         filter_tuple = ("And", tuple(filters)) if filters else None
 
-        ns_results = self.ns.query(
+        ns_results = await self.ns.query(
             rank_by=(
                 "Sum",
                 (
