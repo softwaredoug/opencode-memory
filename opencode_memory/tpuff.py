@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import turbopuffer
 from turbopuffer.types.row_param import RowParam
+from turbopuffer.types.limit_param import LimitParam
 from turbopuffer.types import NamespaceQueryResponse
 import logging
 import os
@@ -159,6 +160,13 @@ class TurboPufferIndex:
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
         filters = []
+        limit: LimitParam = {
+            "total": 50,
+            "per": {
+                "attributes": ["project_path"],
+                "limit": top_k
+            }
+        }
         if system_only:
             filters.append(("is_system_prompt", "Eq", True))
         if project_path is not None:
@@ -178,7 +186,7 @@ class TurboPufferIndex:
                     )
                 )
             ),
-            top_k=top_k,
+            limit=limit,
             filters=filter_tuple if filter_tuple is not None else turbopuffer.omit,
             include_attributes=["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
         )

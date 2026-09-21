@@ -108,12 +108,12 @@ def main():
     parser.add_argument(
         "--project-path",
         default=None,
-        help="Filter results to a specific project path.",
+        help="Filter results to a specific project path. If not specified, will give top K per project to give you an overview",
     )
     parser.add_argument(
         "--system-metadata",
         action="store_true",
-        help="Only return system metadata results.",
+        help="Only return per-project metadata results (system prompts, AGENTS.md, project path).",
     )
     args = parser.parse_args(argv[1:])
     search(
