@@ -6,13 +6,14 @@ import stat
 from pathlib import Path
 from sys import argv
 import asyncio
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from .tpuff import TurboPufferIndex
-from .parse_telemetry import MIN_UTC_TIMESTAMP, prompt_docs
+from .parse_telemetry import MIN_UTC_TIMESTAMP, prompt_docs, last_modified_time
 from .search import results_payload
 
 
@@ -20,7 +21,32 @@ DEFAULT_SOCKET_PATH = (
     Path.home() / ".local" / "share" / "opencode-history" / "service.sock"
 )
 
-app = FastAPI(title="OpenCode History")
+
+async def reindex_loop():
+    last_modified_date = None
+    while True:
+        try:
+            modified_date = last_modified_time()
+            if modified_date != last_modified_date:
+                print("Detected new telemetry data. Reindexing...")
+                await index_latest(force=False)
+                last_modified_date = modified_date
+        except Exception as e:
+            print(f"Error during reindexing: {e}")
+        await asyncio.sleep(60)  # Check every 60 seconds
+
+
+@asynccontextmanager
+async def lifespan(app):  # pyright: ignore[reportUnunsedParameter]
+    task = asyncio.create_task(reindex_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+app = FastAPI(title="OpenCode History", lifespan=lifespan)
 
 
 class IndexRequest(BaseModel):

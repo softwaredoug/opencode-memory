@@ -9,8 +9,8 @@ from itertools import batched
 from datetime import datetime, timezone
 
 
-TPUF_API_KEY = os.getenv("TPUF_API_KEY")
-if TPUF_API_KEY is None:
+TPUFF_API_KEY = os.getenv("TPUFF_API_KEY")
+if TPUFF_API_KEY is None:
     raise RuntimeError("TPUF_API_KEY environment variable is not set.")
 TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class TurboPufferIndex:
 
     def __init__(self):
         self.tpuf = turbopuffer.AsyncTurbopuffer(
-            api_key=TPUF_API_KEY,
+            api_key=TPUFF_API_KEY,
             region="gcp-us-central1"
         )
         ns_name = TPUF_NAMESPACE

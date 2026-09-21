@@ -183,6 +183,30 @@ def _load_telemetry(path: Path,
     return pd.concat(dataframes, ignore_index=True) if dataframes else None
 
 
+def last_modified_time(path: Path | str = TELEMETRY_PATH) -> datetime | None:
+    """Get the last modified time of the latest telemetry file."""
+    path = Path(path)
+    latest_file = None
+    latest_timestamp = None
+
+    for telemetry_path in path.glob("*.jsonl"):
+        basename = telemetry_path.stem
+        timestamp_yyyymmdd = basename.replace('-telemetry', '')
+        try:
+            timestamp = datetime.strptime(timestamp_yyyymmdd, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+        if latest_timestamp is None or timestamp > latest_timestamp:
+            latest_timestamp = timestamp
+            latest_file = telemetry_path
+
+    if latest_file is not None:
+        return datetime.fromtimestamp(latest_file.stat().st_mtime,
+                                      tz=timezone.utc)
+    return None
+
+
 def prompt_docs(path:
                 Path | str = TELEMETRY_PATH,
                 last_index_time: datetime | None = None) -> Iterator[dict]:
