@@ -63,11 +63,22 @@ def format_results(query: str, rows: Iterable[Any]) -> str:
     )
 
 
-def search(query: str, socket_path: Path, top_k: int = 5):
+def search(
+    query: str,
+    socket_path: Path,
+    top_k: int = 5,
+    project_path: str | None = None,
+    system_metadata: bool = False,
+):
     """Search indexed history through the running daemon."""
     connection = UnixSocketHTTPConnection(socket_path)
     try:
-        body = json.dumps({"query": query, "top_k": top_k})
+        body = json.dumps({
+            "query": query,
+            "top_k": top_k,
+            "project_path": project_path,
+            "system_metadata": system_metadata,
+        })
         connection.request(
             "POST",
             "/search",
@@ -94,8 +105,24 @@ def main():
         help="Unix socket path for the history service.",
     )
     parser.add_argument("--top-k", type=int, default=5, help="Maximum results to return.")
+    parser.add_argument(
+        "--project-path",
+        default=None,
+        help="Filter results to a specific project path.",
+    )
+    parser.add_argument(
+        "--system-metadata",
+        action="store_true",
+        help="Only return system metadata results.",
+    )
     args = parser.parse_args(argv[1:])
-    search(query=args.query, socket_path=Path(args.socket).expanduser(), top_k=args.top_k)
+    search(
+        query=args.query,
+        socket_path=Path(args.socket).expanduser(),
+        top_k=args.top_k,
+        project_path=args.project_path,
+        system_metadata=args.system_metadata,
+    )
 
 
 if __name__ == "__main__":

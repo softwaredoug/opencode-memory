@@ -7,6 +7,7 @@ from pathlib import Path
 from sys import argv
 import asyncio
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -37,7 +38,7 @@ async def reindex_loop():
 
 
 @asynccontextmanager
-async def lifespan(app):  # pyright: ignore[reportUnunsedParameter]
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     task = asyncio.create_task(reindex_loop())
     try:
         yield
@@ -94,6 +95,8 @@ async def search(request: SearchRequest):
     indexer = TurboPufferIndex()
     response = await indexer.search(
         phrase=request.query,
+        system_only=request.system_metadata,
+        project_path=request.project_path,
         top_k=request.top_k,
     )
     return results_payload(request.query, response.rows or [])
