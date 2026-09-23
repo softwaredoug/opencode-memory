@@ -22,7 +22,7 @@ The daemon acts as a service to search and keep the index up to date.
 Then to run the memory daemon, run:
 
 ```bash
-TPUF_API_KEY=<your_turbopuffer_api_key> opencode_history
+TURBOPUFFER_API_KEY=<your_turbopuffer_api_key> opencode_history
 ```
 
 Now tell your agent to use this CLI to search
