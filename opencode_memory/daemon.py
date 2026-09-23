@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from .tpuff import TurboPufferIndex
+from .tpuf import TurboPufferIndex
 from .parse_telemetry import MIN_UTC_TIMESTAMP, prompt_docs, last_modified_time
 from .search import results_payload
 
