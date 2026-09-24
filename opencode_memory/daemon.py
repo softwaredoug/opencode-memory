@@ -94,8 +94,8 @@ async def index(request: IndexRequest):
 async def search(request: SearchRequest):
     """Search indexed history and return structured results."""
     indexer = TurboPufferIndex()
-    response = await indexer.search(
-        phrase=request.query,
+    response = await indexer.keyword_search(
+        keywords=request.query,
         system_only=request.system_metadata,
         project_path=request.project_path,
         top_k=request.top_k,
@@ -111,14 +111,14 @@ def main():
         help="Unix socket path for the service.",
     )
     parser.add_argument(
-        "--index",
+        "--reindex",
         action="store_true",
         default=False,
-        help="Index latest telemetry before starting the service.",
+        help="Reindex all telemetry before starting the service (ie in case of config change).",
     )
     args = parser.parse_args(argv[1:])
-    if args.index:
-        asyncio.run(index_latest(force=False))
+    if args.reindex:
+        asyncio.run(index_latest(force=True))
     socket_path = Path(args.socket).expanduser()
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():

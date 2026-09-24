@@ -98,7 +98,7 @@ def search(
 
 def main():
     parser = argparse.ArgumentParser(description="Search indexed OpenCode history.")
-    parser.add_argument("query", help="Query string to search for context.")
+    # parser.add_argument("query", help="Query string to search for context.")
     parser.add_argument(
         "--socket",
         default=os.getenv("OPENCODE_HISTORY_SOCKET", str(DEFAULT_SOCKET_PATH)),
@@ -114,6 +114,12 @@ def main():
         "--system-metadata",
         action="store_true",
         help="Only return per-project metadata results (system prompts, AGENTS.md, project path).",
+    )
+    parser.add_argument(
+        "keyword-search",
+        nargs="?",
+        default=None,
+        help="Keyword search to search for",
     )
     args = parser.parse_args(argv[1:])
     search(
