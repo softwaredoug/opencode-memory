@@ -11,6 +11,13 @@ TELEMETRY_PATH = Path.home() / ".local" / "share" / "opencode"
 MIN_UTC_TIMESTAMP = datetime(1970, 6, 1, tzinfo=timezone.utc)
 
 
+def truncate(text: str, max_chars: int = 40) -> str:
+    """Keep the first max_chars characters and mark truncated text."""
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}... <truncated>"
+
+
 class ChatEvent(BaseModel):
     """A single user interaction and subsequent tool calls, etc."""
 
@@ -231,6 +238,7 @@ def prompt_docs(path:
         yield {
             "id": f"{session_id}_system_prompt",
             "transcript": row['text'] if pd.notna(row['text']) else "",
+            "transcript_full": row['text'] if pd.notna(row['text']) else "",
             "prompt_id": f"{session_id}_system_prompt",  # intentional
             "session_id": session_id,
             "prompt_timestamp": row['timestamp'],
@@ -254,21 +262,28 @@ def prompt_docs(path:
             "tool_call": "Tool call: "
         }
 
-        text = ""
+        all_entries = []
         conversational_entries = []
+        last_conversation_event_type = None
         for _, row in prompt_telemetry.loc[docs_to_index].iterrows():
             event_text = row['text'].replace("\n", " ").strip()
             if event_text:
                 key = row.get('event_type', '')
+                label = prefix_pre_event_type.get(key, "")
                 if key in ["prompt", "assistant_text"]:
-                    conversational_entries.append(row['text'])
-                entry = prefix_pre_event_type.get(row['event_type'], "") + row['text'] + "\n\n"
-                text += entry
+                    conversational_entries.append(label + row['text'])
+                elif key in ["tool_call", "tool_result"]:
+                    if key == "tool_result" and last_conversation_event_type == "tool_result":
+                        all_entries.append(label + row['text'])
+                        continue
+                    conversational_entries.append(label + truncate(row['text']))
+                last_conversation_event_type = key
+                all_entries.append(label + row['text'])
 
         doc = {
             "id": f"{session_id}_{prompt_id}",
-            "conversation": "\n".join(conversational_entries),
-            "transcript": text,
+            "transcript": "\n\n".join(conversational_entries),
+            "transcript_full": "\n\n".join(all_entries),
             "prompt_id": prompt_id,
             "session_id": session_id,
             "prompt_timestamp": prompt_telemetry['timestamp'].min().to_pydatetime().replace(tzinfo=timezone.utc),

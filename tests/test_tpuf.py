@@ -142,17 +142,25 @@ def test_docs_batch_skips_empty_transcripts(tpuf_docs: list[dict]):
     assert [[row["id"] for row in batch] for batch in batches] == [[tpuf_docs[1]["id"]]]
 
 
-def test_docs_batch_truncates_transcripts(tpuf_docs: list[dict]):
+def test_docs_batch_preserves_transcript_fields(tpuf_docs: list[dict]):
     doc = tpuf_docs[1].copy()
-    doc["transcript"] = "x" * (tpuf_module.MAX_TRANSCRIPT_CHARS + 1)
+    doc["transcript_full"] = "full transcript"
 
     batch = next(docs_batch([doc], datetime.min.replace(tzinfo=timezone.utc)))
 
     transcript = batch[0]["transcript"]
-    embedding_text = batch[0]["transcript_embedding_text"]
     assert transcript == doc["transcript"]
-    assert isinstance(embedding_text, str)
-    assert len(embedding_text) == tpuf_module.MAX_TRANSCRIPT_CHARS
+    assert batch[0]["transcript_full"] == doc["transcript_full"]
+
+
+def test_schema_embeds_transcript_but_not_full_transcript():
+    index = TurboPufferIndex.__new__(TurboPufferIndex)
+    schema = index._schema()
+
+    assert schema["transcript"]["embed"]["model"] == "voyage/voyage-4-large"
+    assert "full_text_search" in schema["transcript"]
+    assert "embed" not in schema["transcript_full"]
+    assert "full_text_search" not in schema["transcript_full"]
 
 
 @pytest.mark.asyncio

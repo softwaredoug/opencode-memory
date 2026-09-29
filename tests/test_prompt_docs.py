@@ -4,7 +4,7 @@ import pytest
 from tempfile import TemporaryDirectory
 import json
 
-from opencode_memory.parse_telemetry import prompt_docs
+from opencode_memory.parse_telemetry import prompt_docs, truncate
 
 
 fixture_path = Path(__file__).parent / "fixtures"
@@ -38,13 +38,15 @@ def test_prompt_docs_loads_prompt_metadata_and_event_text():
 
     assert prompt_doc["session_id"] == "ses_f59d1c961ffe3epkVD17Dploo4"
     assert prompt_doc["transcript"]
+    assert prompt_doc["transcript_full"]
     assert "User: " in prompt_doc["transcript"]
     assert "Assistant: " in prompt_doc["transcript"]
     assert "Tool call: " in prompt_doc["transcript"]
     assert "Tool result: " in prompt_doc["transcript"]
-    assert prompt_doc["conversation"].startswith("OK tell me about this repo\n")
-    assert "git status --short" not in prompt_doc["conversation"]
-    assert "plugin/telemetry.js" in prompt_doc["transcript"]
+    assert prompt_doc["transcript"].startswith("User: OK tell me about this repo\n\n")
+    assert "git status --short" in prompt_doc["transcript"]
+    assert "... <truncated>" in prompt_doc["transcript"]
+    assert "plugin/telemetry.js" in prompt_doc["transcript_full"]
 
 
 def test_prompt_selects_for_timestamp():
@@ -205,7 +207,7 @@ def conversational_telemetry():
                     "event": {
                         "properties": {
                             "sessionID": "ses_conversation",
-                            "part": {"messageID": "assistant_one", "text": "First draft"},
+                            "part": {"messageID": "assistant_one", "text": "First draft " + "x" * 40},
                         },
                     },
                 },
@@ -228,6 +230,14 @@ def conversational_telemetry():
                 "payload": {
                     "input": {"sessionID": "ses_conversation"},
                     "output": {"output": "Tool output"},
+                },
+            },
+            {
+                "event_type": "tool_result",
+                "timestamp": "2026-09-19T10:00:04.500Z",
+                "payload": {
+                    "input": {"sessionID": "ses_conversation"},
+                    "output": {"output": "Continued tool output"},
                 },
             },
             {
@@ -264,12 +274,28 @@ def conversational_telemetry():
 
 def test_conversational_entries_group_prompt_and_assistant_text(conversational_telemetry):
     docs = list(prompt_docs(conversational_telemetry))
-    conversations = {
-        doc["prompt_id"]: doc["conversation"]
+    normal_docs = {
+        doc["prompt_id"]: doc["transcript"]
+        for doc in docs
+        if not doc["prompt_id"].endswith("_system_prompt")
+    }
+    transcripts = {
+        doc["prompt_id"]: doc["transcript_full"]
         for doc in docs
         if not doc["prompt_id"].endswith("_system_prompt")
     }
 
-    assert conversations["prompt_one"] == "First question\nFirst draft\nFinal answer"
-    assert conversations["prompt_two"] == "Second question\nSecond answer"
-    assert "Tool output" not in conversations["prompt_one"]
+    assert normal_docs["prompt_one"].startswith("User: First question\n\nAssistant: First draft ")
+    assert "Assistant: First draft " + "x" * 40 in normal_docs["prompt_one"]
+    assert "Assistant: First draft xxxxxxxxxxxxxxxxxxxxxxxxxxxx... <truncated>" not in normal_docs["prompt_one"]
+    assert normal_docs["prompt_one"].endswith("Tool result: Tool output")
+    assert "Continued tool output" not in normal_docs["prompt_one"]
+    assert normal_docs["prompt_two"] == "User: Second question\n\nAssistant: Second answer"
+    assert "x" * 40 in transcripts["prompt_one"]
+    assert "Continued tool output" in transcripts["prompt_one"]
+    assert "... <truncated>" not in transcripts["prompt_one"]
+
+
+def test_truncate_marks_only_text_over_limit():
+    assert truncate("short", max_chars=5) == "short"
+    assert truncate("123456", max_chars=5) == "12345... <truncated>"
