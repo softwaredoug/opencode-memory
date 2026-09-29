@@ -53,7 +53,12 @@ def docs_batch(docs: Iterable[dict],
             converted_batch.append(RowParam(**doc))
         return converted_batch
 
-    filtered_docs = (doc for doc in docs if doc['prompt_timestamp'] > last_index_time)
+    filtered_docs = (
+        doc for doc in docs
+        if doc['prompt_timestamp'] > last_index_time
+        and isinstance(doc.get('transcript'), str)
+        and doc['transcript'].strip()
+    )
 
     for batch in batched(filtered_docs, batch_size):
         yield _convert_batch(batch)

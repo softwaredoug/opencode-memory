@@ -1,4 +1,4 @@
-from opencode_memory.tpuf import TurboPufferIndex
+from opencode_memory.tpuf import TurboPufferIndex, docs_batch
 import pytest_asyncio
 import pytest
 from collections.abc import AsyncIterator
@@ -124,3 +124,17 @@ async def test_indexing_after_ts(tpuf_index: TurboPufferIndex, tpuf_docs: list[d
         assert isinstance(prompt_timestamp_value, str)
         prompt_timestamp = datetime.fromisoformat(prompt_timestamp_value.replace("Z", "+00:00"))
         assert prompt_timestamp >= expected_valid_index_time
+
+
+def test_docs_batch_skips_empty_transcripts(tpuf_docs: list[dict]):
+    docs = [
+        {
+            **tpuf_docs[0],
+            "transcript": "   ",
+        },
+        tpuf_docs[1].copy(),
+    ]
+
+    batches = list(docs_batch(docs, datetime.min.replace(tzinfo=timezone.utc)))
+
+    assert [[row["id"] for row in batch] for batch in batches] == [[tpuf_docs[1]["id"]]]
