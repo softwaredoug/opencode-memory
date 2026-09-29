@@ -248,20 +248,26 @@ def prompt_docs(path:
         # Concat all text to get text for the prompt document
         docs_to_index = prompt_telemetry['text'].drop_duplicates().dropna().index
         prefix_pre_event_type = {
-            "prompt": "User:\n",
-            "assistant_text": "Assistant:\n",
-            "tool_result": "Tool result:\n",
-            "tool_call": "Tool call:\n"
+            "prompt": "User: ",
+            "assistant_text": "Assistant: ",
+            "tool_result": "Tool result: ",
+            "tool_call": "Tool call: "
         }
 
         text = ""
+        conversational_entries = []
         for _, row in prompt_telemetry.loc[docs_to_index].iterrows():
             event_text = row['text'].replace("\n", " ").strip()
             if event_text:
-                text += prefix_pre_event_type.get(row['event_type'], "") + row['text'] + "\n\n"
+                key = row.get('event_type', '')
+                if key in ["prompt", "assistant_text"]:
+                    conversational_entries.append(row['text'])
+                entry = prefix_pre_event_type.get(row['event_type'], "") + row['text'] + "\n\n"
+                text += entry
 
         doc = {
             "id": f"{session_id}_{prompt_id}",
+            "conversation": "\n".join(conversational_entries),
             "transcript": text,
             "prompt_id": prompt_id,
             "session_id": session_id,

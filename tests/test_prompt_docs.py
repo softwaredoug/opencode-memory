@@ -38,10 +38,12 @@ def test_prompt_docs_loads_prompt_metadata_and_event_text():
 
     assert prompt_doc["session_id"] == "ses_f59d1c961ffe3epkVD17Dploo4"
     assert prompt_doc["transcript"]
-    assert "User:\n" in prompt_doc["transcript"]
-    assert "Assistant:\n" in prompt_doc["transcript"]
-    assert "Tool call:\n" in prompt_doc["transcript"]
-    assert "Tool result:\n" in prompt_doc["transcript"]
+    assert "User: " in prompt_doc["transcript"]
+    assert "Assistant: " in prompt_doc["transcript"]
+    assert "Tool call: " in prompt_doc["transcript"]
+    assert "Tool result: " in prompt_doc["transcript"]
+    assert prompt_doc["conversation"].startswith("OK tell me about this repo\n")
+    assert "git status --short" not in prompt_doc["conversation"]
     assert "plugin/telemetry.js" in prompt_doc["transcript"]
 
 
@@ -167,3 +169,107 @@ def test_project_path_assigned_correctly(interleaved_telemetry):
     docs = list(prompt_docs(interleaved_telemetry))
     assert docs[0]['project_path'] == Path('/tmp/project-a')
     assert docs[1]['project_path'] == Path('/tmp/project-b')
+
+
+@pytest.fixture
+def conversational_telemetry():
+    with TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        events = [
+            {
+                "event_type": "system_prompt",
+                "timestamp": "2026-09-19T10:00:00.000Z",
+                "session_id": "ses_conversation",
+                "project_metadata": {"path": "/tmp/project", "agents_md": "metadata"},
+                "payload": {
+                    "input": {"sessionID": "ses_conversation"},
+                    "output": {"message": {"id": "system"}, "parts": [{"text": "System"}]},
+                },
+            },
+            {
+                "event_type": "prompt",
+                "timestamp": "2026-09-19T10:00:01.000Z",
+                "session_id": "ses_conversation",
+                "payload": {
+                    "input": {"sessionID": "ses_conversation"},
+                    "output": {
+                        "message": {"id": "prompt_one"},
+                        "parts": [{"text": "First question"}],
+                    },
+                },
+            },
+            {
+                "event_type": "assistant_text",
+                "timestamp": "2026-09-19T10:00:02.000Z",
+                "payload": {
+                    "event": {
+                        "properties": {
+                            "sessionID": "ses_conversation",
+                            "part": {"messageID": "assistant_one", "text": "First draft"},
+                        },
+                    },
+                },
+            },
+            {
+                "event_type": "assistant_text",
+                "timestamp": "2026-09-19T10:00:03.000Z",
+                "payload": {
+                    "event": {
+                        "properties": {
+                            "sessionID": "ses_conversation",
+                            "part": {"messageID": "assistant_one", "text": "Final answer"},
+                        },
+                    },
+                },
+            },
+            {
+                "event_type": "tool_result",
+                "timestamp": "2026-09-19T10:00:04.000Z",
+                "payload": {
+                    "input": {"sessionID": "ses_conversation"},
+                    "output": {"output": "Tool output"},
+                },
+            },
+            {
+                "event_type": "prompt",
+                "timestamp": "2026-09-19T10:00:05.000Z",
+                "session_id": "ses_conversation",
+                "payload": {
+                    "input": {"sessionID": "ses_conversation"},
+                    "output": {
+                        "message": {"id": "prompt_two"},
+                        "parts": [{"text": "Second question"}],
+                    },
+                },
+            },
+            {
+                "event_type": "assistant_text",
+                "timestamp": "2026-09-19T10:00:06.000Z",
+                "payload": {
+                    "event": {
+                        "properties": {
+                            "sessionID": "ses_conversation",
+                            "part": {"messageID": "assistant_two", "text": "Second answer"},
+                        },
+                    },
+                },
+            },
+        ]
+        telemetry_file = temp_dir / "2026-09-19-telemetry.jsonl"
+        with telemetry_file.open("w") as output:
+            for event in events:
+                output.write(json.dumps(event) + "\n")
+        yield temp_dir
+
+
+def test_conversational_entries_group_prompt_and_assistant_text(conversational_telemetry):
+    docs = list(prompt_docs(conversational_telemetry))
+    conversations = {
+        doc["prompt_id"]: doc["conversation"]
+        for doc in docs
+        if not doc["prompt_id"].endswith("_system_prompt")
+    }
+
+    assert conversations["prompt_one"] == "First question\nFirst draft\nFinal answer"
+    assert conversations["prompt_two"] == "Second question\nSecond answer"
+    assert "Tool output" not in conversations["prompt_one"]
