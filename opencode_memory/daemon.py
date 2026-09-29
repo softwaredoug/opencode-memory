@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
 import uvicorn
+import turbopuffer
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
@@ -81,6 +82,10 @@ async def index_latest(force: bool = False):
     last_index_time = await indexer.last_index_time()
     if force:
         last_index_time = MIN_UTC_TIMESTAMP
+        try:
+            await indexer.ns.delete_all()
+        except turbopuffer.NotFoundError:
+            pass
         print("Force reindexing all docs into TurboPuffer.")
     else:
         print(f"Indexing telemetry after {last_index_time.isoformat()} into TurboPuffer.")
