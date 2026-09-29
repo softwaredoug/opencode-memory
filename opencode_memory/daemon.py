@@ -74,6 +74,8 @@ class SearchRequest(BaseModel):
     system_metadata: bool = Field(default=False,
                                   description="Only include session metadata in results (AGENTS.md and repo info). Otherwise include all results.")
     project_path: str | None = Field(default=None, description="Filter results to a specific project path.")
+    session_id: str | None = Field(default=None, description="Filter results to one OpenCode session.")
+    prompt_ordinal: int | None = Field(default=None, ge=0, description="Filter to one prompt ordinal within a session.")
 
 
 async def index_latest(force: bool = False):
@@ -112,12 +114,16 @@ async def index(request: IndexRequest):
 @app.post("/search")
 async def search(request: SearchRequest):
     """Search indexed history and return structured results."""
+    if request.prompt_ordinal is not None and request.session_id is None:
+        raise HTTPException(status_code=422, detail="prompt_ordinal requires session_id")
     indexer = TurboPufferIndex()
     try:
         response = await indexer.search(
             query=request.query,
             system_only=request.system_metadata,
             project_path=request.project_path,
+            session_id=request.session_id,
+            prompt_ordinal=request.prompt_ordinal,
             top_k=request.top_k,
         )
         return results_payload(request.query, response.rows or [])

@@ -248,11 +248,15 @@ def prompt_docs(path:
 
     telemetry = telemetry[telemetry['event_type'] != 'system_prompt']
     prompt_ids = telemetry['prompt_id'].unique()
+    session_prompt_ordinals = {}
+
     for prompt_id in prompt_ids:
         prompt_telemetry = telemetry[telemetry['prompt_id'] == prompt_id]
         if len(prompt_telemetry) == 0:
             continue
         session_id = prompt_telemetry['session_id'].iloc[0]
+        prompt_ordinal = session_prompt_ordinals.get(session_id, 0)
+        session_prompt_ordinals[session_id] = prompt_ordinal + 1
         # Concat all text to get text for the prompt document
         docs_to_index = prompt_telemetry['text'].drop_duplicates().dropna().index
         prefix_pre_event_type = {
@@ -285,6 +289,7 @@ def prompt_docs(path:
             "transcript": "\n\n".join(conversational_entries),
             "transcript_full": "\n\n".join(all_entries),
             "prompt_id": prompt_id,
+            "prompt_ordinal": prompt_ordinal,
             "session_id": session_id,
             "prompt_timestamp": prompt_telemetry['timestamp'].min().to_pydatetime().replace(tzinfo=timezone.utc),
             "project_path": prompt_telemetry['project_path'].iloc[0] if pd.notna(prompt_telemetry['project_path'].iloc[0]) else None,

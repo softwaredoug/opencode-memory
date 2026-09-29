@@ -170,6 +170,23 @@ def test_schema_embeds_transcript_but_not_full_transcript():
     assert "full_text_search" in schema["transcript"]
     assert "embed" not in schema["transcript_full"]
     assert "full_text_search" not in schema["transcript_full"]
+    assert schema["prompt_ordinal"] == {"type": "int", "filterable": True}
+
+
+def test_filters_support_session_and_prompt_ordinal():
+    index = TurboPufferIndex.__new__(TurboPufferIndex)
+
+    filters = index._filters(
+        system_only=False,
+        project_path=None,
+        session_id="session_alpha",
+        prompt_ordinal=3,
+    )
+
+    assert filters == (
+        "And",
+        (("session_id", "Eq", "session_alpha"), ("prompt_ordinal", "Eq", 3)),
+    )
 
 
 @pytest.mark.asyncio

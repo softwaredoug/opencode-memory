@@ -84,6 +84,22 @@ def test_index_then_search_fixture_telemetry(telemetry_path, monkeypatch):
                     and "distinctive fixture phrase" in item["transcript"]
                     for item in result["results"]
                 )
+                session_search = client.post(
+                    "/search",
+                    json={
+                        "query": "distinctive fixture phrase",
+                        "session_id": "session_test",
+                        "prompt_ordinal": 0,
+                    },
+                )
+                assert session_search.status_code == 200
+                assert session_search.json()["result_count"] == 1
+
+                invalid_search = client.post(
+                    "/search",
+                    json={"query": "anything", "prompt_ordinal": 0},
+                )
+                assert invalid_search.status_code == 422
                 inspect_response = client.get("/inspect/session_test_prompt_test")
                 assert inspect_response.status_code == 200
                 inspected = inspect_response.json()

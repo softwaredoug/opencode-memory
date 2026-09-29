@@ -79,6 +79,8 @@ def search(
     socket_path: Path,
     top_k: int = 5,
     project_path: str | None = None,
+    session_id: str | None = None,
+    prompt_ordinal: int | None = None,
     system_metadata: bool = False,
 ):
     """Search indexed history through the running daemon."""
@@ -88,6 +90,8 @@ def search(
             "query": query,
             "top_k": top_k,
             "project_path": project_path,
+            "session_id": session_id,
+            "prompt_ordinal": prompt_ordinal,
             "system_metadata": system_metadata,
         })
         connection.request(
@@ -144,6 +148,17 @@ def main():
         help="Filter results to a specific project path. If not specified, will give top K per project to give you an overview",
     )
     parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Filter results to one OpenCode session.",
+    )
+    parser.add_argument(
+        "--prompt-ordinal",
+        type=int,
+        default=None,
+        help="Filter to one prompt ordinal within --session-id.",
+    )
+    parser.add_argument(
         "--system-metadata",
         action="store_true",
         help="Only return per-project metadata results (system prompts, AGENTS.md, project path).",
@@ -156,17 +171,22 @@ def main():
     )
     args = parser.parse_args(argv[1:])
     if args.inspect is not None:
-        if args.search is not None or args.top_k != 5 or args.project_path is not None or args.system_metadata:
+        if (args.search is not None or args.top_k != 5 or args.project_path is not None
+                or args.session_id is not None or args.prompt_ordinal is not None or args.system_metadata):
             parser.error("--inspect cannot be combined with a query or search options")
         inspect_doc(args.inspect, Path(args.socket).expanduser())
         return
     if args.search is None:
         parser.error("a search query is required unless --inspect is used")
+    if args.prompt_ordinal is not None and args.session_id is None:
+        parser.error("--prompt-ordinal requires --session-id")
     search(
         query=args.search,
         socket_path=Path(args.socket).expanduser(),
         top_k=args.top_k,
         project_path=args.project_path,
+        session_id=args.session_id,
+        prompt_ordinal=args.prompt_ordinal,
         system_metadata=args.system_metadata,
     )
 

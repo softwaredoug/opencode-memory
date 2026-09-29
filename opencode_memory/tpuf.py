@@ -127,6 +127,10 @@ class TurboPufferIndex:
                 "type": "string",
                 "filterable": True
             },
+            "prompt_ordinal": {
+                "type": "int",
+                "filterable": True
+            },
             "prompt_timestamp": {
                 "type": "datetime",
                 "filterable": True
@@ -195,18 +199,31 @@ class TurboPufferIndex:
 
         return result.rows[0] if result.rows else None
 
-    def _filters(self, system_only: bool, project_path: str | None) -> tuple | None:
+    def _filters(self,
+                 system_only: bool,
+                 project_path: str | None,
+                 session_id: str | None = None,
+                 prompt_ordinal: int | None = None) -> tuple | None:
         filters = []
         if system_only:
             filters.append(("is_system_prompt", "Eq", True))
         if project_path is not None:
             filters.append(("project_path", "Eq", project_path))
+        if session_id is not None:
+            filters.append(("session_id", "Eq", session_id))
+        if prompt_ordinal is not None:
+            if session_id is None:
+                raise ValueError("prompt_ordinal requires session_id")
+            filters.append(("prompt_ordinal", "Eq", prompt_ordinal))
         filter_tuple = ("And", tuple(filters)) if filters else None
         return filter_tuple
 
-    def _limit(self, project_path: str | None, top_k: int) -> LimitParam:
+    def _limit(self,
+               project_path: str | None,
+               top_k: int,
+               exact: bool = False) -> LimitParam:
         limit: LimitParam = {
-            "total": 50 if project_path is None else top_k,
+            "total": top_k if exact or project_path is not None else 50,
             "per": {
                 "attributes": ["project_path"],
                 "limit": top_k
@@ -218,6 +235,8 @@ class TurboPufferIndex:
                      query: str,
                      system_only: bool = False,
                      project_path: str | None = None,
+                     session_id: str | None = None,
+                     prompt_ordinal: int | None = None,
                      top_k=5) -> Result:
         """Search history with BM25 and Voyage embeddings fused by RRF."""
         logger.info(
@@ -228,18 +247,20 @@ class TurboPufferIndex:
         )
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
-        filters = self._filters(system_only, project_path)
+        exact = prompt_ordinal is not None
+        filters = self._filters(system_only, project_path, session_id, prompt_ordinal)
+        result_limit = 1 if exact else top_k
         result = await self.ns.multi_query(
             queries=[
                 {
                     "rank_by": ("transcript", "BM25", query),
-                    "limit": self._limit(project_path, top_k),
+                    "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },
                 {
                     "rank_by": ("transcript", "ANN", ("Embed", query)),
-                    "limit": self._limit(project_path, top_k),
+                    "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },

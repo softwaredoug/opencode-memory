@@ -166,6 +166,9 @@ def test_interleaved_assigns_prompt_id_correctly(interleaved_telemetry):
     assert docs[0]['prompt_id'] == 'ses_A_system_prompt'
     assert docs[1]['prompt_id'] == 'ses_B_system_prompt'
 
+    normal_docs = [doc for doc in docs if not doc["prompt_id"].endswith("_system_prompt")]
+    assert [doc["prompt_ordinal"] for doc in normal_docs] == [0, 0]
+
 
 def test_project_path_assigned_correctly(interleaved_telemetry):
     docs = list(prompt_docs(interleaved_telemetry))
