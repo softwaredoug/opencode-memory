@@ -79,7 +79,8 @@ def test_index_then_search_fixture_telemetry(telemetry_path, monkeypatch):
                 result = search_response.json()
                 assert result["result_count"] >= 1
                 assert any(
-                    item["session_id"] == "session_test"
+                    item["id"] == "session_test_prompt_test"
+                    and item["session_id"] == "session_test"
                     and "distinctive fixture phrase" in item["transcript"]
                     for item in result["results"]
                 )

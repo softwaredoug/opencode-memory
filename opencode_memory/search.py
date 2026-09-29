@@ -42,6 +42,7 @@ def results_payload(query: str, rows: Iterable[Any]) -> dict:
     results = [
         {
             "rank": rank,
+            "id": _row_value(row, "id"),
             "session_id": _row_value(row, "session_id"),
             "prompt_id": _row_value(row, "prompt_id"),
             "prompt_timestamp": _row_value(row, "prompt_timestamp"),
