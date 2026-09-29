@@ -149,8 +149,10 @@ def test_docs_batch_truncates_transcripts(tpuf_docs: list[dict]):
     batch = next(docs_batch([doc], datetime.min.replace(tzinfo=timezone.utc)))
 
     transcript = batch[0]["transcript"]
-    assert isinstance(transcript, str)
-    assert len(transcript) == tpuf_module.MAX_TRANSCRIPT_CHARS
+    embedding_text = batch[0]["transcript_embedding_text"]
+    assert transcript == doc["transcript"]
+    assert isinstance(embedding_text, str)
+    assert len(embedding_text) == tpuf_module.MAX_TRANSCRIPT_CHARS
 
 
 @pytest.mark.asyncio

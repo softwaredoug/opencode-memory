@@ -53,7 +53,7 @@ def docs_batch(docs: Iterable[dict],
         converted_batch = []
         for doc in batch:
             doc = doc.copy()
-            doc['transcript'] = doc['transcript'][:MAX_TRANSCRIPT_CHARS]
+            doc['transcript_embedding_text'] = doc['transcript'][:MAX_TRANSCRIPT_CHARS]
             doc['prompt_timestamp'] = doc['prompt_timestamp'].isoformat()  # Convert datetime to ISO string
             doc['project_path'] = str(doc['project_path']) if doc['project_path'] is not None else None
             converted_batch.append(RowParam(**doc))
@@ -110,6 +110,10 @@ class TurboPufferIndex:
                     "remove_stopwords": False,
                     "case_sensitive": False
                 },
+                "filterable": False
+            },
+            "transcript_embedding_text": {
+                "type": "string",
                 "embed": {"model": VOYAGE_MODEL},
                 "filterable": False
             },
@@ -236,7 +240,7 @@ class TurboPufferIndex:
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },
                 {
-                    "rank_by": ("transcript", "ANN", ("Embed", query)),
+                    "rank_by": ("transcript_embedding_text", "ANN", ("Embed", query)),
                     "limit": self._limit(project_path, top_k),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
