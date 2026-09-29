@@ -54,6 +54,16 @@ def results_payload(query: str, rows: Iterable[Any]) -> dict:
     return {"query": query, "result_count": len(results), "results": results}
 
 
+def inspect_payload(row: Any) -> dict:
+    """Build a full-document payload using the untruncated transcript."""
+    payload = dict(row)
+    payload["transcript"] = payload.pop("transcript_full", None)
+    for key, value in payload.items():
+        if isinstance(value, (date, datetime)):
+            payload[key] = value.isoformat()
+    return payload
+
+
 def format_results(query: str, rows: Iterable[Any]) -> str:
     """Format search results as a stable, agent-readable JSON document."""
     return json.dumps(
@@ -97,9 +107,31 @@ def search(
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
 
 
+def inspect_doc(doc_id: str, socket_path: Path):
+    """Fetch and print one complete document through the running daemon."""
+    connection = UnixSocketHTTPConnection(socket_path)
+    try:
+        connection.request("GET", f"/inspect/{doc_id}")
+        response = connection.getresponse()
+        response_body = response.read().decode("utf-8")
+    finally:
+        connection.close()
+
+    result = json.loads(response_body)
+    if response.status >= 400:
+        raise RuntimeError(result.get("detail", response_body))
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Search indexed OpenCode history.")
     # parser.add_argument("query", help="Query string to search for context.")
+    parser.add_argument(
+        "--inspect",
+        default=None,
+        metavar="DOC_ID",
+        help="Fetch one complete document by ID; cannot be combined with search options.",
+    )
     parser.add_argument(
         "--socket",
         default=os.getenv("OPENCODE_HISTORY_SOCKET", str(DEFAULT_SOCKET_PATH)),
@@ -123,6 +155,13 @@ def main():
         help="Search for context",
     )
     args = parser.parse_args(argv[1:])
+    if args.inspect is not None:
+        if args.search is not None or args.top_k != 5 or args.project_path is not None or args.system_metadata:
+            parser.error("--inspect cannot be combined with a query or search options")
+        inspect_doc(args.inspect, Path(args.socket).expanduser())
+        return
+    if args.search is None:
+        parser.error("a search query is required unless --inspect is used")
     search(
         query=args.search,
         socket_path=Path(args.socket).expanduser(),

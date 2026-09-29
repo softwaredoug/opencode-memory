@@ -190,7 +190,7 @@ class TurboPufferIndex:
             filters=("id", "Eq", doc_id),
             rank_by=("id", "asc"),
             limit=1,
-            include_attributes=True,
+            exclude_attributes=["transcript"],
         )
 
         return result.rows[0] if result.rows else None

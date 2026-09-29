@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator
 
 import uvicorn
 import turbopuffer
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from .tpuf import TurboPufferIndex
@@ -21,7 +21,7 @@ from .parse_telemetry import (
     last_modified_time,
     prompt_docs,
 )
-from .search import results_payload
+from .search import inspect_payload, results_payload
 
 
 DEFAULT_SOCKET_PATH = (
@@ -79,18 +79,21 @@ class SearchRequest(BaseModel):
 async def index_latest(force: bool = False):
     """Index the latest docs into TurboPuffer."""
     indexer = TurboPufferIndex()
-    last_index_time = await indexer.last_index_time()
-    if force:
-        last_index_time = MIN_UTC_TIMESTAMP
-        try:
-            await indexer.ns.delete_all()
-        except turbopuffer.NotFoundError:
-            pass
-        print("Force reindexing all docs into TurboPuffer.")
-    else:
-        print(f"Indexing telemetry after {last_index_time.isoformat()} into TurboPuffer.")
-    docs = prompt_docs(path=telemetry_path(), last_index_time=last_index_time)
-    await indexer.index_docs(docs)
+    try:
+        last_index_time = await indexer.last_index_time()
+        if force:
+            last_index_time = MIN_UTC_TIMESTAMP
+            try:
+                await indexer.ns.delete_all()
+            except turbopuffer.NotFoundError:
+                pass
+            print("Force reindexing all docs into TurboPuffer.")
+        else:
+            print(f"Indexing telemetry after {last_index_time.isoformat()} into TurboPuffer.")
+        docs = prompt_docs(path=telemetry_path(), last_index_time=last_index_time)
+        await indexer.index_docs(docs)
+    finally:
+        await indexer.tpuf.close()
 
 
 @app.get("/health")
@@ -110,13 +113,29 @@ async def index(request: IndexRequest):
 async def search(request: SearchRequest):
     """Search indexed history and return structured results."""
     indexer = TurboPufferIndex()
-    response = await indexer.search(
-        query=request.query,
-        system_only=request.system_metadata,
-        project_path=request.project_path,
-        top_k=request.top_k,
-    )
-    return results_payload(request.query, response.rows or [])
+    try:
+        response = await indexer.search(
+            query=request.query,
+            system_only=request.system_metadata,
+            project_path=request.project_path,
+            top_k=request.top_k,
+        )
+        return results_payload(request.query, response.rows or [])
+    finally:
+        await indexer.tpuf.close()
+
+
+@app.get("/inspect/{doc_id}")
+async def inspect(doc_id: str):
+    """Fetch one complete document by its TurboPuffer ID."""
+    indexer = TurboPufferIndex()
+    try:
+        row = await indexer.fetch(doc_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+        return inspect_payload(row)
+    finally:
+        await indexer.tpuf.close()
 
 
 def main():

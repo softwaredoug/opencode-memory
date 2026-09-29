@@ -84,6 +84,12 @@ def test_index_then_search_fixture_telemetry(telemetry_path, monkeypatch):
                     and "distinctive fixture phrase" in item["transcript"]
                     for item in result["results"]
                 )
+                inspect_response = client.get("/inspect/session_test_prompt_test")
+                assert inspect_response.status_code == 200
+                inspected = inspect_response.json()
+                assert inspected["id"] == "session_test_prompt_test"
+                assert inspected["transcript"] == "User: Find the distinctive fixture phrase"
+                assert "transcript_full" not in inspected
             finally:
                 async def close_indexes():
                     for index in indexes:

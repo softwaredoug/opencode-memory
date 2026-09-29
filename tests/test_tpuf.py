@@ -11,8 +11,13 @@ from typing import Any
 async def tpuf_index() -> AsyncIterator[TurboPufferIndex]:
     test_ns_name = "test_opencode_history"
     tpuf = TurboPufferIndex(ns_name=test_ns_name)
-    yield tpuf
-    await tpuf.ns.delete_all()
+    try:
+        yield tpuf
+    finally:
+        try:
+            await tpuf.ns.delete_all()
+        finally:
+            await tpuf.tpuf.close()
 
 
 @pytest.fixture
@@ -96,6 +101,8 @@ def tpuf_docs() -> list[dict]:
 @pytest.mark.asyncio
 async def test_indexing(tpuf_index: TurboPufferIndex, tpuf_docs: list[dict]):
     docs = tpuf_docs
+    for doc in docs:
+        doc["transcript_full"] = f"Full details: {doc['transcript']}"
     await tpuf_index.index_docs(docs)
     # Retrieve the doc
 
@@ -103,6 +110,8 @@ async def test_indexing(tpuf_index: TurboPufferIndex, tpuf_docs: list[dict]):
         row = await tpuf_index.fetch(doc['id'])
         assert row is not None
         assert row['session_id'] == doc['session_id']
+        assert row['transcript_full'] == f"Full details: {doc['transcript']}"
+        assert "transcript" not in row
 
 
 @pytest.mark.asyncio
