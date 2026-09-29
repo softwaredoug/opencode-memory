@@ -250,16 +250,17 @@ class TurboPufferIndex:
         exact = prompt_ordinal is not None
         filters = self._filters(system_only, project_path, session_id, prompt_ordinal)
         result_limit = 1 if exact else top_k
+        backend_query = query or " "
         result = await self.ns.multi_query(
             queries=[
                 {
-                    "rank_by": ("transcript", "BM25", query),
+                    "rank_by": ("transcript", "BM25", backend_query),
                     "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },
                 {
-                    "rank_by": ("transcript", "ANN", ("Embed", query)),
+                    "rank_by": ("transcript", "ANN", ("Embed", backend_query)),
                     "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],

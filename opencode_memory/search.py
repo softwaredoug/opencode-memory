@@ -86,8 +86,9 @@ def search(
     """Search indexed history through the running daemon."""
     connection = UnixSocketHTTPConnection(socket_path)
     try:
+        exact_prompt = session_id is not None and prompt_ordinal is not None
         body = json.dumps({
-            "query": query,
+            "query": "" if exact_prompt else query,
             "top_k": top_k,
             "project_path": project_path,
             "session_id": session_id,
@@ -171,17 +172,18 @@ def main():
     )
     args = parser.parse_args(argv[1:])
     if args.inspect is not None:
-        if (args.search is not None or args.top_k != 5 or args.project_path is not None
+        if (args.top_k != 5 or args.project_path is not None
                 or args.session_id is not None or args.prompt_ordinal is not None or args.system_metadata):
             parser.error("--inspect cannot be combined with a query or search options")
         inspect_doc(args.inspect, Path(args.socket).expanduser())
         return
-    if args.search is None:
+    exact_prompt = args.session_id is not None and args.prompt_ordinal is not None
+    if args.search is None and not exact_prompt:
         parser.error("a search query is required unless --inspect is used")
     if args.prompt_ordinal is not None and args.session_id is None:
         parser.error("--prompt-ordinal requires --session-id")
     search(
-        query=args.search,
+        query=args.search or "",
         socket_path=Path(args.socket).expanduser(),
         top_k=args.top_k,
         project_path=args.project_path,

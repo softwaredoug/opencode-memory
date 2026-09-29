@@ -68,7 +68,7 @@ class IndexRequest(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    query: str
+    query: str = ""
     top_k: int = Field(default=5, ge=1, le=50)
 
     system_metadata: bool = Field(default=False,
@@ -117,16 +117,17 @@ async def search(request: SearchRequest):
     if request.prompt_ordinal is not None and request.session_id is None:
         raise HTTPException(status_code=422, detail="prompt_ordinal requires session_id")
     indexer = TurboPufferIndex()
+    query = "" if request.prompt_ordinal is not None else request.query
     try:
         response = await indexer.search(
-            query=request.query,
+            query=query,
             system_only=request.system_metadata,
             project_path=request.project_path,
             session_id=request.session_id,
             prompt_ordinal=request.prompt_ordinal,
             top_k=request.top_k,
         )
-        return results_payload(request.query, response.rows or [])
+        return results_payload(query, response.rows or [])
     finally:
         await indexer.tpuf.close()
 

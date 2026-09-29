@@ -87,13 +87,13 @@ def test_index_then_search_fixture_telemetry(telemetry_path, monkeypatch):
                 session_search = client.post(
                     "/search",
                     json={
-                        "query": "distinctive fixture phrase",
                         "session_id": "session_test",
                         "prompt_ordinal": 0,
                     },
                 )
                 assert session_search.status_code == 200
                 assert session_search.json()["result_count"] == 1
+                assert session_search.json()["query"] == ""
 
                 invalid_search = client.post(
                     "/search",
