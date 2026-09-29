@@ -14,20 +14,31 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from .tpuf import TurboPufferIndex
-from .parse_telemetry import MIN_UTC_TIMESTAMP, prompt_docs, last_modified_time
+from .parse_telemetry import (
+    MIN_UTC_TIMESTAMP,
+    TELEMETRY_PATH,
+    last_modified_time,
+    prompt_docs,
+)
 from .search import results_payload
 
 
 DEFAULT_SOCKET_PATH = (
     Path.home() / ".local" / "share" / "opencode-history" / "service.sock"
 )
+TELEMETRY_PATH_ENV = "OPENCODE_TELEMETRY_PATH"
+
+
+def telemetry_path() -> Path:
+    """Return the telemetry directory, allowing tests to use a temporary corpus."""
+    return Path(os.getenv(TELEMETRY_PATH_ENV, str(TELEMETRY_PATH))).expanduser()
 
 
 async def reindex_loop():
     last_modified_date = None
     while True:
         try:
-            modified_date = last_modified_time()
+            modified_date = last_modified_time(telemetry_path())
             if modified_date != last_modified_date:
                 print("Detected new telemetry data. Reindexing...")
                 await index_latest(force=False)
@@ -73,7 +84,7 @@ async def index_latest(force: bool = False):
         print("Force reindexing all docs into TurboPuffer.")
     else:
         print(f"Indexing telemetry after {last_index_time.isoformat()} into TurboPuffer.")
-    docs = prompt_docs(last_index_time=last_index_time)
+    docs = prompt_docs(path=telemetry_path(), last_index_time=last_index_time)
     await indexer.index_docs(docs)
 
 
@@ -94,8 +105,8 @@ async def index(request: IndexRequest):
 async def search(request: SearchRequest):
     """Search indexed history and return structured results."""
     indexer = TurboPufferIndex()
-    response = await indexer.keyword_search(
-        keywords=request.query,
+    response = await indexer.search(
+        query=request.query,
         system_only=request.system_metadata,
         project_path=request.project_path,
         top_k=request.top_k,

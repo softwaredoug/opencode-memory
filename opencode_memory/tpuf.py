@@ -1,8 +1,8 @@
-from sentence_transformers import SentenceTransformer, MultiVectorEncoder
 import turbopuffer
 from turbopuffer.types.row_param import RowParam
 from turbopuffer.types.limit_param import LimitParam
-from turbopuffer.types import NamespaceQueryResponse, Row
+from turbopuffer.types import Row
+from turbopuffer.types.namespace_multi_query_response import Result
 import logging
 from collections.abc import Iterable
 import os
@@ -11,18 +11,14 @@ from itertools import batched
 from datetime import datetime, timezone
 
 
-LATE_INTERACTION = False
 TURBOPUFFER_API_KEY = os.getenv("TURBOPUFFER_API_KEY")
 if TURBOPUFFER_API_KEY is None:
     raise RuntimeError("TURBOPUFFER_API_KEY environment variable is not set.")
 DEFAULT_TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
+VOYAGE_MODEL = "voyage/voyage-4-large"
 
 
 logger = logging.getLogger(__name__)
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-colbert = MultiVectorEncoder("answerdotai/answerai-colbert-small-v1") if LATE_INTERACTION else None
 
 
 def ns_exists(tpuf, ns_name, expected_count=1):
@@ -48,14 +44,10 @@ def docs_batch(docs: Iterable[dict],
     """
     Yield batches of documents for indexing where the prompt_timestamp is greater than the last_index_time.
     """
-    def _convert_batch(batch, embeddings) -> list[RowParam]:
-        """Add a vector param, then rebuild the batch of dicts to one of rowparams."""
+    def _convert_batch(batch) -> list[RowParam]:
+        """Convert a batch of documents to row parameters."""
         converted_batch = []
-        for doc, embedding in zip(batch, embeddings):
-            doc['vector'] = embedding
-            if colbert is not None:
-                doc['transcript_tokens'] = colbert.encode(doc['transcript'],
-                                                          convert_to_numpy=True).tolist()
+        for doc in batch:
             doc['prompt_timestamp'] = doc['prompt_timestamp'].isoformat()  # Convert datetime to ISO string
             doc['project_path'] = str(doc['project_path']) if doc['project_path'] is not None else None
             converted_batch.append(RowParam(**doc))
@@ -64,9 +56,7 @@ def docs_batch(docs: Iterable[dict],
     filtered_docs = (doc for doc in docs if doc['prompt_timestamp'] > last_index_time)
 
     for batch in batched(filtered_docs, batch_size):
-        all_texts = [doc['transcript'] for doc in batch]
-        embeddings = model.encode(all_texts, convert_to_tensor=True).tolist()
-        yield _convert_batch(batch, embeddings)
+        yield _convert_batch(batch)
 
 
 class TurboPufferIndex:
@@ -100,12 +90,6 @@ class TurboPufferIndex:
 
     def _schema(self) -> dict:
         schema = {
-            "transcript_tokens": {
-                "type": "[][96]f32",
-                "ann": {
-                    "late_interaction": True,
-                }
-            },
             "transcript": {
                 "type": "string",
                 "full_text_search": {
@@ -115,6 +99,7 @@ class TurboPufferIndex:
                     "remove_stopwords": False,
                     "case_sensitive": False
                 },
+                "embed": {"model": VOYAGE_MODEL},
                 "filterable": False
             },
             "session_id": {
@@ -138,8 +123,6 @@ class TurboPufferIndex:
                 "filterable": True
             }
         }
-        if colbert is None:
-            del schema["transcript_tokens"]
         return schema
 
     async def index_docs(self,
@@ -151,7 +134,8 @@ class TurboPufferIndex:
         """
         if last_index_time is None:
             last_index_time = await self.last_index_time()
-        for batch in docs_batch(docs, batch_size=batch_size,
+        for batch in docs_batch(docs,
+                                batch_size=batch_size,
                                 last_index_time=last_index_time):
             print(f"Indexing batch of {len(batch)} docs into TurboPuffer...")
             await self.ns.write(
@@ -199,65 +183,36 @@ class TurboPufferIndex:
         }
         return limit
 
-    async def late_interaction_search(self,
-                                      query: str,
-                                      system_only: bool = False,
-                                      project_path: str | None = None,
-                                      top_k=5) -> NamespaceQueryResponse:
-        """Search with a late interaction search of history."""
+    async def search(self,
+                     query: str,
+                     system_only: bool = False,
+                     project_path: str | None = None,
+                     top_k=5) -> Result:
+        """Search history with BM25 and Voyage embeddings fused by RRF."""
         logger.info(
-            "Querying TurboPuffer(li) for top %s results mentioning terms: %s",
+            "Querying TurboPuffer with BM25 and %s for top %s results: %s",
+            VOYAGE_MODEL,
             top_k,
             query,
         )
         if self.ns is None:
             raise RuntimeError("Namespace is not initialized. Please index documents first.")
-        if colbert is None:
-            raise RuntimeError("Late interaction search is not enabled. Please set LATE_INTERACTION=True and reindex documents.")
         filters = self._filters(system_only, project_path)
-        query_vectors = colbert.encode_query(
-            query, convert_to_numpy=True
-        ).tolist()
-
-        ns_results = await self.ns.query(
-            rank_by=("transcript_tokens", "ANN", query_vectors),
-            limit=self._limit(project_path, top_k),
-            filters=filters if filters is not None else turbopuffer.omit,
-            include_attributes=["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
+        result = await self.ns.multi_query(
+            queries=[
+                {
+                    "rank_by": ("transcript", "BM25", query),
+                    "limit": self._limit(project_path, top_k),
+                    "filters": filters if filters is not None else turbopuffer.omit,
+                    "include_attributes": ["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
+                },
+                {
+                    "rank_by": ("transcript", "ANN", ("Embed", query)),
+                    "limit": self._limit(project_path, top_k),
+                    "filters": filters if filters is not None else turbopuffer.omit,
+                    "include_attributes": ["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
+                },
+            ],
+            rerank_by=("RRF",),
         )
-        return ns_results
-
-    async def keyword_search(self,
-                             keywords: str,
-                             system_only: bool = False,
-                             project_path: str | None = None,
-                             top_k=5) -> NamespaceQueryResponse:
-        """
-        Query TurboPuffer for context mentioning the given phrase
-        """
-        logger.info(
-            "Querying TurboPuffer(kw) for top %s results mentioning terms: %s",
-            top_k,
-            keywords,
-        )
-        if self.ns is None:
-            raise RuntimeError("Namespace is not initialized. Please index documents first.")
-        filter_tuple = self._filters(system_only, project_path)
-
-        ns_results = await self.ns.query(
-            rank_by=(
-                "Sum",
-                (
-                    ("transcript", "BM25", keywords),
-                    (
-                        "Product",
-                        10.0,   # boost phrase matches
-                        ("transcript", "ContainsTokenSequence", keywords)
-                    )
-                )
-            ),
-            limit=self._limit(project_path, top_k),
-            filters=filter_tuple if filter_tuple is not None else turbopuffer.omit,
-            include_attributes=["transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
-        )
-        return ns_results
+        return result.results[0]

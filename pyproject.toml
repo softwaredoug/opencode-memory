@@ -8,7 +8,6 @@ dependencies = [
     "pandas>=3.0.5",
     "fastapi>=0.115.0",
     "pydantic>=2.13.5",
-    "sentence-transformers>=6.0.1",
     "tqdm>=4.70.1",
     "turbopuffer>=2.9.0",
     "uvicorn>=0.34.0",

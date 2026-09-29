@@ -163,7 +163,10 @@ def _load_telemetry(path: Path,
     if not path.exists():
         raise FileNotFoundError(f"Telemetry file not found at {path}")
 
-    last_index_time = last_index_time - timedelta(days=1)
+    # A new index can report datetime.min; do not underflow while applying
+    # the one-day overlap window.
+    if last_index_time > datetime.min.replace(tzinfo=timezone.utc):
+        last_index_time = last_index_time - timedelta(days=1)
     first_day_formatted = last_index_time.strftime("%Y-%m-%d")
     dataframes = []
     last_index_time = last_index_time.astimezone(timezone.utc)

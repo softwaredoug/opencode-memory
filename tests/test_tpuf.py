@@ -2,7 +2,7 @@ from opencode_memory.tpuf import TurboPufferIndex
 import pytest_asyncio
 import pytest
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 @pytest_asyncio.fixture
@@ -101,3 +101,26 @@ async def test_indexing(tpuf_index: TurboPufferIndex, tpuf_docs: list[dict]):
         row = await tpuf_index.fetch(doc['id'])
         assert row is not None
         assert row['session_id'] == doc['session_id']
+
+
+@pytest.mark.asyncio
+async def test_indexing_after_ts(tpuf_index: TurboPufferIndex, tpuf_docs: list[dict]):
+    docs = tpuf_docs
+    last_index_time = datetime(2024, 1, 3, 9, 0, tzinfo=timezone.utc)
+    expected_valid_index_time = last_index_time - timedelta(days=1)
+    indexed_ids = {
+        doc["id"] for doc in docs if doc["prompt_timestamp"] > last_index_time
+    }
+
+    await tpuf_index.index_docs(docs, last_index_time=last_index_time)
+    # Retrieve the doc
+
+    for doc in docs:
+        if doc["id"] not in indexed_ids:
+            continue
+        row = await tpuf_index.fetch(doc['id'])
+        assert row is not None
+        prompt_timestamp_value = row["prompt_timestamp"]
+        assert isinstance(prompt_timestamp_value, str)
+        prompt_timestamp = datetime.fromisoformat(prompt_timestamp_value.replace("Z", "+00:00"))
+        assert prompt_timestamp >= expected_valid_index_time

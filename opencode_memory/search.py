@@ -116,14 +116,14 @@ def main():
         help="Only return per-project metadata results (system prompts, AGENTS.md, project path).",
     )
     parser.add_argument(
-        "keyword-search",
+        "search",
         nargs="?",
         default=None,
-        help="Keyword search to search for",
+        help="Search for context",
     )
     args = parser.parse_args(argv[1:])
     search(
-        query=args.query,
+        query=args.search,
         socket_path=Path(args.socket).expanduser(),
         top_k=args.top_k,
         project_path=args.project_path,
