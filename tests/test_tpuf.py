@@ -1,8 +1,10 @@
+import opencode_memory.tpuf as tpuf_module
 from opencode_memory.tpuf import TurboPufferIndex, docs_batch
 import pytest_asyncio
 import pytest
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone, timedelta
+from typing import Any
 
 
 @pytest_asyncio.fixture
@@ -138,3 +140,43 @@ def test_docs_batch_skips_empty_transcripts(tpuf_docs: list[dict]):
     batches = list(docs_batch(docs, datetime.min.replace(tzinfo=timezone.utc)))
 
     assert [[row["id"] for row in batch] for batch in batches] == [[tpuf_docs[1]["id"]]]
+
+
+def test_docs_batch_truncates_transcripts(tpuf_docs: list[dict]):
+    doc = tpuf_docs[1].copy()
+    doc["transcript"] = "x" * (tpuf_module.MAX_TRANSCRIPT_CHARS + 1)
+
+    batch = next(docs_batch([doc], datetime.min.replace(tzinfo=timezone.utc)))
+
+    transcript = batch[0]["transcript"]
+    assert isinstance(transcript, str)
+    assert len(transcript) == tpuf_module.MAX_TRANSCRIPT_CHARS
+
+
+@pytest.mark.asyncio
+async def test_write_batch_retries_transient_failures(monkeypatch):
+    class TransientFailure(Exception):
+        pass
+
+    class Namespace:
+        attempts = 0
+
+        async def write(self, **_kwargs):
+            self.attempts += 1
+            if self.attempts < 3:
+                raise TransientFailure()
+
+    delays = []
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(tpuf_module.turbopuffer, "InternalServerError", TransientFailure)
+    monkeypatch.setattr(tpuf_module.asyncio, "sleep", sleep)
+
+    index: Any = TurboPufferIndex.__new__(TurboPufferIndex)
+    index.ns = Namespace()
+    await index._write_batch([])
+
+    assert index.ns.attempts == 3
+    assert delays == [1.0, 2.0]

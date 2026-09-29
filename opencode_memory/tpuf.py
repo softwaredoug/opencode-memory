@@ -1,3 +1,4 @@
+import asyncio
 import turbopuffer
 from turbopuffer.types.row_param import RowParam
 from turbopuffer.types.limit_param import LimitParam
@@ -16,6 +17,9 @@ if TURBOPUFFER_API_KEY is None:
     raise RuntimeError("TURBOPUFFER_API_KEY environment variable is not set.")
 DEFAULT_TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
 VOYAGE_MODEL = "voyage/voyage-4-large"
+INDEX_MAX_RETRIES = 3
+INDEX_RETRY_BASE_SECONDS = 1.0
+MAX_TRANSCRIPT_CHARS = 4000
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +44,7 @@ def ns_exists(tpuf, ns_name, expected_count=1):
 
 def docs_batch(docs: Iterable[dict],
                last_index_time: datetime,
-               batch_size: int = 100) -> Iterator[list[RowParam]]:
+               batch_size: int = 30) -> Iterator[list[RowParam]]:
     """
     Yield batches of documents for indexing where the prompt_timestamp is greater than the last_index_time.
     """
@@ -48,6 +52,8 @@ def docs_batch(docs: Iterable[dict],
         """Convert a batch of documents to row parameters."""
         converted_batch = []
         for doc in batch:
+            doc = doc.copy()
+            doc['transcript'] = doc['transcript'][:MAX_TRANSCRIPT_CHARS]
             doc['prompt_timestamp'] = doc['prompt_timestamp'].isoformat()  # Convert datetime to ISO string
             doc['project_path'] = str(doc['project_path']) if doc['project_path'] is not None else None
             converted_batch.append(RowParam(**doc))
@@ -130,10 +136,32 @@ class TurboPufferIndex:
         }
         return schema
 
+    async def _write_batch(self, batch: list[RowParam]) -> None:
+        """Write a batch, retrying transient embedding/service failures."""
+        for attempt in range(INDEX_MAX_RETRIES + 1):
+            try:
+                await self.ns.write(
+                    upsert_rows=batch,
+                    distance_metric="cosine_distance",
+                    schema=self._schema()
+                )
+                return
+            except (turbopuffer.RateLimitError, turbopuffer.InternalServerError):
+                if attempt == INDEX_MAX_RETRIES:
+                    raise
+                delay = INDEX_RETRY_BASE_SECONDS * (2 ** attempt)
+                logger.warning(
+                    "Transient TurboPuffer write failure; retrying in %.1f seconds (attempt %s/%s).",
+                    delay,
+                    attempt + 1,
+                    INDEX_MAX_RETRIES,
+                )
+                await asyncio.sleep(delay)
+
     async def index_docs(self,
                          docs: Iterable[dict],
                          last_index_time: datetime | None = None,
-                         batch_size=100):
+                         batch_size=30):
         """
         Index the documents into TurboPuffer.
         """
@@ -143,11 +171,7 @@ class TurboPufferIndex:
                                 batch_size=batch_size,
                                 last_index_time=last_index_time):
             print(f"Indexing batch of {len(batch)} docs into TurboPuffer...")
-            await self.ns.write(
-                upsert_rows=batch,
-                distance_metric="cosine_distance",
-                schema=self._schema()
-            )
+            await self._write_batch(batch)
 
         result = await self.ns.query(
             rank_by=("id", "asc"),
