@@ -45,6 +45,7 @@ def results_payload(query: str, rows: Iterable[Any]) -> dict:
             "id": _row_value(row, "id"),
             "session_id": _row_value(row, "session_id"),
             "prompt_id": _row_value(row, "prompt_id"),
+            "prompt_ordinal": _row_value(row, "prompt_ordinal"),
             "prompt_timestamp": _row_value(row, "prompt_timestamp"),
             "project_path": _row_value(row, "project_path"),
             "transcript": _row_value(row, "transcript"),

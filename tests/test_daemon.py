@@ -14,7 +14,11 @@ from opencode_memory.tpuf import TurboPufferIndex
 @pytest.mark.asyncio
 async def test_search_caps_fused_results_to_top_k(monkeypatch):
     rows = [
-        {"id": f"doc_{index}", "project_path": f"/project/{index}"}
+        {
+            "id": f"doc_{index}",
+            "project_path": f"/project/{index}",
+            "prompt_ordinal": index,
+        }
         for index in range(3)
     ]
 
@@ -34,6 +38,7 @@ async def test_search_caps_fused_results_to_top_k(monkeypatch):
 
     assert result["result_count"] == 2
     assert [item["id"] for item in result["results"]] == ["doc_0", "doc_1"]
+    assert [item["prompt_ordinal"] for item in result["results"]] == [0, 1]
 
 
 @pytest.fixture
