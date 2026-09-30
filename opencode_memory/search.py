@@ -57,8 +57,17 @@ def results_payload(query: str, rows: Iterable[Any]) -> dict:
 
 def inspect_payload(row: Any) -> dict:
     """Build a full-document payload using the untruncated transcript."""
-    payload = dict(row)
-    payload["transcript"] = payload.pop("transcript_full", None)
+    row_data = dict(row)
+    payload = {
+        "id": row_data.get("id"),
+        "transcript": row_data.get("transcript_full"),
+        "session_id": row_data.get("session_id"),
+        "prompt_id": row_data.get("prompt_id"),
+        "prompt_ordinal": row_data.get("prompt_ordinal"),
+        "prompt_timestamp": row_data.get("prompt_timestamp"),
+        "project_path": row_data.get("project_path"),
+        "is_system_prompt": row_data.get("is_system_prompt"),
+    }
     for key, value in payload.items():
         if isinstance(value, (date, datetime)):
             payload[key] = value.isoformat()

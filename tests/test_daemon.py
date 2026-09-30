@@ -41,6 +41,42 @@ async def test_search_caps_fused_results_to_top_k(monkeypatch):
     assert [item["prompt_ordinal"] for item in result["results"]] == [0, 1]
 
 
+def test_inspect_payload_excludes_embedding_vector():
+    payload = daemon.inspect_payload({
+        "id": "doc_0",
+        "transcript_full": "full transcript",
+        "embed_transcript": [0.1, 0.2, 0.3],
+    })
+
+    assert payload["transcript"] == "full transcript"
+    assert "embed_transcript" not in payload
+
+
+def test_inspect_payload_includes_precisely_document_attributes():
+    payload = daemon.inspect_payload({
+        "id": "doc_0",
+        "transcript_full": "full transcript",
+        "session_id": "session_0",
+        "prompt_id": "prompt_0",
+        "prompt_ordinal": 3,
+        "prompt_timestamp": "2026-09-30T12:00:00Z",
+        "project_path": "/project",
+        "is_system_prompt": False,
+        "embed_transcript": [0.1, 0.2, 0.3],
+    })
+
+    assert set(payload) == {
+        "id",
+        "transcript",
+        "session_id",
+        "prompt_id",
+        "prompt_ordinal",
+        "prompt_timestamp",
+        "project_path",
+        "is_system_prompt",
+    }
+
+
 @pytest.fixture
 def telemetry_path(tmp_path):
     telemetry_path = tmp_path / "telemetry"
