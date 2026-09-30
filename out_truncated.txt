@@ -1,0 +1,59 @@
+User: (Jev is a new model from Typesafe)
+
+What is the python client library for jev?
+
+Assistant: I’ll check the project documentation and search the available sources for the current Jev Python client package.
+
+Tool call: glob {"pattern": "docs/*.md"}
+
+Tool result: /Users/doug/ws/cheat-at-search/docs/batc... <truncated>
+
+Tool call: read {"filePath": "/Users/doug/ws/cheat-... <truncated>
+
+Tool result: <path>/Users/doug/ws/cheat-at-search/doc... <truncated>
+
+Tool call: read {"filePath": "/Users/doug/ws/cheat-... <truncated>
+
+Tool call: read {"filePath": "/Users/doug/ws/cheat-... <truncated>
+
+Tool call: read {"filePath": "/Users/doug/ws/cheat-... <truncated>
+
+Tool call: read {"filePath": "/Users/doug/ws/cheat-... <truncated>
+
+Tool result: <path>/Users/doug/ws/cheat-at-search/doc... <truncated>
+
+Tool call: webfetch {"format": "text", "timeout": 2... <truncated>
+
+Tool call: webfetch {"format": "markdown", "timeout... <truncated>
+
+Tool call: webfetch {"format": "markdown", "timeout... <truncated>
+
+Tool result: {"info":{"author":null,"author_email":nu... <truncated>
+
+Tool call: webfetch {"format": "markdown", "timeout... <truncated>
+
+Tool call: webfetch {"format": "text", "timeout": 2... <truncated>
+
+Tool call: webfetch {"format": "markdown", "timeout... <truncated>
+
+Tool result: {"info":{"author":"TypeSafe AI","author_... <truncated>
+
+Assistant: The official low-level Python client is **`typesafe-sdk`**, imported as:
+
+```python
+from typesafe_sdk import TypeSafeClient
+```
+
+Install it with:
+
+```bash
+uv add typesafe-sdk
+```
+
+There is also a higher-level **`jev`** package:
+
+```bash
+uv add jev
+```
+
+Use `typesafe-sdk` for direct Jev/System One API access; use `jev` for the decorator-based Python interface.
