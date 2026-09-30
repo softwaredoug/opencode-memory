@@ -189,6 +189,24 @@ def test_filters_support_session_and_prompt_ordinal():
     )
 
 
+def test_system_metadata_limit_is_global_and_diversified():
+    index = TurboPufferIndex.__new__(TurboPufferIndex)
+
+    assert index._limit(None, 5, system_only=True) == {
+        "total": 5,
+        "per": {"attributes": ["project_path"], "limit": 1},
+    }
+
+
+def test_non_metadata_limit_remains_per_project():
+    index = TurboPufferIndex.__new__(TurboPufferIndex)
+
+    assert index._limit(None, 5) == {
+        "total": 50,
+        "per": {"attributes": ["project_path"], "limit": 5},
+    }
+
+
 @pytest.mark.asyncio
 async def test_write_batch_retries_transient_failures(monkeypatch):
     class TransientFailure(Exception):
