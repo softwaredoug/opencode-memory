@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from pathlib import Path
 from pydantic import BaseModel
@@ -75,6 +76,17 @@ def _text_payload(event_dict: dict) -> str | None:
         value = _get_nested(event_dict, path)
         if value is not None:
             return value
+
+    args = _get_nested(event_dict, ("output", "args"))
+    if isinstance(args, Mapping):
+        command = args.get("command")
+        if isinstance(command, str):
+            return command
+
+        tool = _get_nested(event_dict, ("input", "tool"))
+        args_text = json.dumps(args, ensure_ascii=False, default=str, sort_keys=True)
+        return f"{tool} {args_text}" if tool else args_text
+
     return None
 
 

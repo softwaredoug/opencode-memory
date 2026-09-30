@@ -49,6 +49,37 @@ def test_prompt_docs_loads_prompt_metadata_and_event_text():
     assert "plugin/telemetry.js" in prompt_doc["transcript_full"]
 
 
+def test_fixture_preserves_read_tool_call_with_its_result():
+    docs = list(prompt_docs(fixture_path))
+    prompt_doc = next(
+        doc
+        for doc in docs
+        if doc["prompt_id"] == "msg_0a62e36af001541mlNkgAAcTzO"
+    )
+
+    assert "Tool call: read" in prompt_doc["transcript"]
+    assert "Tool result:" in prompt_doc["transcript"]
+    assert "plugin/telemetry.js" in prompt_doc["transcript_full"]
+
+
+@pytest.mark.parametrize(
+    ("prompt_id", "tool"),
+    [
+        ("msg_0a62e36af001541mlNkgAAcTzO", "glob"),
+        ("msg_0a682cd7f001evhK4CuO70qgtA", "webfetch"),
+        ("msg_0a78abc59001n3KR4mZxVRViUK", "apply_patch"),
+        ("msg_0ac5a2b28001aXZNSoAG17ril4", "todowrite"),
+    ],
+    ids=["glob", "webfetch", "apply_patch", "todowrite"],
+)
+def test_fixture_preserves_structured_tool_calls_with_results(prompt_id, tool):
+    docs = list(prompt_docs(fixture_path))
+    prompt_doc = next(doc for doc in docs if doc["prompt_id"] == prompt_id)
+
+    assert f"Tool call: {tool}" in prompt_doc["transcript"]
+    assert "Tool result:" in prompt_doc["transcript"]
+
+
 def test_prompt_selects_for_timestamp():
     timestamp = "2026-09-17T00:00:00Z"
     ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
