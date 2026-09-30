@@ -127,7 +127,7 @@ async def search(request: SearchRequest):
             prompt_ordinal=request.prompt_ordinal,
             top_k=request.top_k,
         )
-        return results_payload(query, response.rows or [])
+        return results_payload(query, (response.rows or [])[:request.top_k])
     finally:
         await indexer.tpuf.close()
 

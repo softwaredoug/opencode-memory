@@ -221,14 +221,12 @@ class TurboPufferIndex:
     def _limit(self,
                project_path: str | None,
                top_k: int,
-               exact: bool = False,
-               system_only: bool = False) -> LimitParam:
-        diversified_metadata = system_only and project_path is None and not exact
+               exact: bool = False) -> LimitParam:
         limit: LimitParam = {
-            "total": top_k if diversified_metadata or exact or project_path is not None else 50,
+            "total": top_k,
             "per": {
                 "attributes": ["project_path"],
-                "limit": 1 if diversified_metadata else top_k,
+                "limit": min(2, top_k),
             }
         }
         return limit
@@ -257,13 +255,13 @@ class TurboPufferIndex:
             queries=[
                 {
                     "rank_by": ("transcript", "BM25", backend_query),
-                    "limit": self._limit(project_path, result_limit, exact, system_only),
+                    "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },
                 {
                     "rank_by": ("transcript", "ANN", ("Embed", backend_query)),
-                    "limit": self._limit(project_path, result_limit, exact, system_only),
+                    "limit": self._limit(project_path, result_limit, exact),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_timestamp", "project_path"],
                 },

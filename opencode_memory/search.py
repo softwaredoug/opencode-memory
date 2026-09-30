@@ -146,7 +146,7 @@ def main():
     parser.add_argument(
         "--project-path",
         default=None,
-        help="Filter results to a specific project path. If not specified, will give top K per project to give you an overview",
+        help="Filter results to a specific project path. Results are capped at --top-k total, with at most 2 per project.",
     )
     parser.add_argument(
         "--session-id",

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,31 @@ import turbopuffer
 
 import opencode_memory.daemon as daemon
 from opencode_memory.tpuf import TurboPufferIndex
+
+
+@pytest.mark.asyncio
+async def test_search_caps_fused_results_to_top_k(monkeypatch):
+    rows = [
+        {"id": f"doc_{index}", "project_path": f"/project/{index}"}
+        for index in range(3)
+    ]
+
+    class FakeIndex:
+        class Client:
+            async def close(self):
+                pass
+
+        tpuf = Client()
+
+        async def search(self, **_kwargs):
+            return SimpleNamespace(rows=rows)
+
+    monkeypatch.setattr(daemon, "TurboPufferIndex", FakeIndex)
+
+    result = await daemon.search(daemon.SearchRequest(query="query", top_k=2))
+
+    assert result["result_count"] == 2
+    assert [item["id"] for item in result["results"]] == ["doc_0", "doc_1"]
 
 
 @pytest.fixture
