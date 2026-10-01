@@ -201,10 +201,38 @@ def test_search_limit_is_global_and_diversified():
 def test_search_limit_is_global_with_project_filter():
     index = TurboPufferIndex.__new__(TurboPufferIndex)
 
-    assert index._limit("/projects/alpha", 5) == {
-        "total": 5,
-        "per": {"attributes": ["project_path"], "limit": 2},
-    }
+    assert index._limit("/projects/alpha", 5) == {"total": 5}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("project_path", "session_id"),
+    [
+        ("/projects/alpha", None),
+        (None, "session_alpha"),
+    ],
+)
+async def test_filtered_search_does_not_diversify(
+    tpuf_index: TurboPufferIndex,
+    tpuf_docs: list[dict],
+    project_path,
+    session_id,
+):
+    await tpuf_index.index_docs(tpuf_docs)
+
+    result = await tpuf_index.search(
+        query="instructions",
+        project_path=project_path,
+        session_id=session_id,
+        top_k=3,
+    )
+    rows = result.rows or []
+
+    assert len(rows) == 3
+    if project_path is not None:
+        assert all(row["project_path"] == project_path for row in rows)
+    if session_id is not None:
+        assert all(row["session_id"] == session_id for row in rows)
 
 
 def test_exact_search_limit_fits_global_limit():

@@ -221,7 +221,11 @@ class TurboPufferIndex:
     def _limit(self,
                project_path: str | None,
                top_k: int,
-               exact: bool = False) -> LimitParam:
+               exact: bool = False,
+               session_id: str | None = None) -> LimitParam:
+        if project_path is not None or session_id is not None:
+            return {"total": top_k}
+
         limit: LimitParam = {
             "total": top_k,
             "per": {
@@ -255,13 +259,13 @@ class TurboPufferIndex:
             queries=[
                 {
                     "rank_by": ("transcript", "BM25", backend_query),
-                    "limit": self._limit(project_path, result_limit, exact),
+                    "limit": self._limit(project_path, result_limit, exact, session_id),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_ordinal", "prompt_timestamp", "project_path"],
                 },
                 {
                     "rank_by": ("transcript", "ANN", ("Embed", backend_query)),
-                    "limit": self._limit(project_path, result_limit, exact),
+                    "limit": self._limit(project_path, result_limit, exact, session_id),
                     "filters": filters if filters is not None else turbopuffer.omit,
                     "include_attributes": ["id", "transcript", "session_id", "prompt_id", "prompt_ordinal", "prompt_timestamp", "project_path"],
                 },

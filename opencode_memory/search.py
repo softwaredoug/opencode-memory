@@ -156,7 +156,7 @@ def main():
     parser.add_argument(
         "--project-path",
         default=None,
-        help="Filter results to a specific project path. Results are capped at --top-k total, with at most 2 per project.",
+        help="Filter results to a specific project path. Unfiltered results are capped at --top-k total, with at most 2 per project.",
     )
     parser.add_argument(
         "--session-id",
@@ -170,7 +170,7 @@ def main():
         help="Filter to one prompt ordinal within --session-id.",
     )
     parser.add_argument(
-        "--system-metadata",
+        "--session-metadata",
         action="store_true",
         help="Only return per-project metadata results (system prompts, AGENTS.md, project path).",
     )
@@ -183,7 +183,7 @@ def main():
     args = parser.parse_args(argv[1:])
     if args.inspect is not None:
         if (args.top_k != 5 or args.project_path is not None
-                or args.session_id is not None or args.prompt_ordinal is not None or args.system_metadata):
+                or args.session_id is not None or args.prompt_ordinal is not None or args.session_metadata):
             parser.error("--inspect cannot be combined with a query or search options")
         inspect_doc(args.inspect, Path(args.socket).expanduser())
         return
@@ -199,7 +199,7 @@ def main():
         project_path=args.project_path,
         session_id=args.session_id,
         prompt_ordinal=args.prompt_ordinal,
-        system_metadata=args.system_metadata,
+        system_metadata=args.session_metadata,
     )
 
 
