@@ -1,6 +1,7 @@
 import os from "node:os"
 import path from "node:path"
 import { appendFile, mkdir, readFile } from "node:fs/promises"
+import { createScrubber } from "./scrubber.js"
 
 const telemetryDirectory = path.join(
   os.homedir(),
@@ -147,13 +148,15 @@ export const TracePlugin = async ({
   }
 
   projectMetadata = await loadProjectMetadata(directory)
+  const scrub = createScrubber()
+  projectMetadata = scrub(projectMetadata)
 
   // double check the ignore file, and if suddenly it has appeared,
   // we begin ignoring
   let writeEventGuardedImpl = async (eventType, data) => {
     hasIgnore = await hasIgnoreFile(directory)
     if (hasIgnore) return
-    await writeEventImpl(eventType, data)
+    await writeEventImpl(eventType, scrub(data))
   }
 
   return {
@@ -224,14 +227,14 @@ export const TracePlugin = async ({
         const partType = part?.type
         if (partType !== "reasoning" && partType !== "text") return
 
-        await writeEventImpl(partType === "reasoning" ? "reasoning" : "assistant_text", {
+        await writeEventGuardedImpl(partType === "reasoning" ? "reasoning" : "assistant_text", {
           event,
           prompt_id,
         })
         return
       }
 
-      await writeEventImpl("message_updated", {
+      await writeEventGuardedImpl("message_updated", {
         event,
         prompt_id,
       })
