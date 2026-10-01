@@ -17,6 +17,6 @@ require_command opencode
 require_command install
 
 "$repo_dir/scripts/install_opencode.sh" --force
-uv tool install --force "$repo_dir"
+uv tool install --force --reinstall "$repo_dir"
 
 printf 'Installed OpenCode history daemon and search CLI.\n'
