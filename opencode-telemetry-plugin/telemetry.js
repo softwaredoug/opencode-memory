@@ -53,9 +53,9 @@ function writeEvent(eventType, data) {
     timestamp: timestamp.toISOString(),
     session_id: data.input?.sessionID ?? null,
     call_id: data.input?.callID ?? null,
-    project_metadata: projectMetadata,
     payload: data,
   }
+  if (eventType === "system_prompt") record.project_metadata = projectMetadata
 
   let line
   try {

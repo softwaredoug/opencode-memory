@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -115,6 +115,51 @@ test("calls all with no ignore file", async () => {
     }
     assert.equal(calls, 4)
   } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("writes full AGENTS.md metadata only on system prompts", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "opencode-telemetry-metadata-"))
+  const telemetryFile = path.join(directory, "telemetry.jsonl")
+  const agentsMd = "# Project instructions\n\nKeep this content on the system prompt only.\n"
+  const previousTelemetryFile = process.env.OPENCODE_TELEMETRY_FILE
+
+  try {
+    await writeFile(path.join(directory, "AGENTS.md"), agentsMd)
+    process.env.OPENCODE_TELEMETRY_FILE = telemetryFile
+
+    const { TracePlugin: FreshTracePlugin } = await import(
+      `../telemetry.js?metadata-test=${Date.now()}`
+    )
+    const plugin = await FreshTracePlugin({ directory })
+
+    await plugin["chat.message"](
+      { sessionID: "session-metadata" },
+      { message: { id: "prompt-metadata" } },
+    )
+    await plugin["experimental.chat.system.transform"](
+      { sessionID: "session-metadata" },
+      { system: ["system instructions"] },
+    )
+    await plugin["tool.execute.before"](
+      { sessionID: "session-metadata", tool: "bash", callID: "call-metadata" },
+      { args: { command: "printf test" } },
+    )
+
+    const records = (await readFile(telemetryFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+    const systemRecord = records.find((record) => record.event_type === "system_prompt")
+    const otherRecords = records.filter((record) => record.event_type !== "system_prompt")
+
+    assert.equal(systemRecord.project_metadata.agents_md, agentsMd)
+    assert.ok(otherRecords.length > 0)
+    assert.ok(otherRecords.every((record) => record.project_metadata?.agents_md !== agentsMd))
+  } finally {
+    if (previousTelemetryFile === undefined) delete process.env.OPENCODE_TELEMETRY_FILE
+    else process.env.OPENCODE_TELEMETRY_FILE = previousTelemetryFile
     await rm(directory, { recursive: true, force: true })
   }
 })
