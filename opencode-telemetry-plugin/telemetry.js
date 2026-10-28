@@ -278,15 +278,15 @@ export const TracePlugin = async ({
 
       try {
         const result = await ragSearchImpl(query)
-        if (!Array.isArray(result.results)) return
+        if (!Array.isArray(result.breadcrumbs)) return
 
         const retrieval = {
           retrieval_id: result.retrieval_id,
           retrieval_version: result.retrieval_version,
           prompt_id: promptId,
-          result_count: result.results.length,
-          project_paths: uniqueResultValues(result.results, "project_path"),
-          session_ids: uniqueResultValues(result.results, "session_id"),
+          result_count: result.breadcrumbs.length,
+          project_paths: uniqueResultValues(result.breadcrumbs, "project_path"),
+          session_ids: uniqueResultValues(result.breadcrumbs, "session_id"),
         }
         latestRagRetrievalBySession.set(sessionID, retrieval)
         await writeEventGuardedImpl("rag_retrieval", {
@@ -294,8 +294,8 @@ export const TracePlugin = async ({
           ...retrieval,
         })
 
-        if (result.results.length > 0) {
-          ragResultsBySession.set(sessionID, { results: result.results, retrieval })
+        if (result.breadcrumbs.length > 0) {
+          ragResultsBySession.set(sessionID, { results: result.breadcrumbs, retrieval })
         }
       } catch (error) {
         // Retrieval is optional; a daemon/backend failure must not block the prompt.

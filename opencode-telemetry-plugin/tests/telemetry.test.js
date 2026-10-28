@@ -125,7 +125,7 @@ test("RAG search can be disabled with its feature flag", async () => {
     let calls = 0
     const plugin = await TracePlugin({
       writeEvent: async () => {},
-      ragSearch: async () => { calls++; return { results: [] } },
+      ragSearch: async () => { calls++; return { breadcrumbs: [] } },
     })
 
     await plugin["chat.message"](
@@ -145,7 +145,7 @@ test("RAG search defaults on for prompts longer than 100 characters", async () =
     const queries = []
     const plugin = await TracePlugin({
       writeEvent: async () => {},
-      ragSearch: async (query) => { queries.push(query); return { results: [] } },
+      ragSearch: async (query) => { queries.push(query); return { breadcrumbs: [] } },
     })
 
     await plugin["chat.message"](
@@ -172,7 +172,7 @@ test("RAG search prompt-length threshold can be overridden", async () => {
     const queries = []
     const plugin = await TracePlugin({
       writeEvent: async () => {},
-      ragSearch: async (query) => { queries.push(query); return { results: [] } },
+      ragSearch: async (query) => { queries.push(query); return { breadcrumbs: [] } },
     })
 
     await plugin["chat.message"](
@@ -197,7 +197,7 @@ test("invalid RAG prompt-length threshold falls back to 100 characters", async (
     const queries = []
     const plugin = await TracePlugin({
       writeEvent: async () => {},
-      ragSearch: async (query) => { queries.push(query); return { results: [] } },
+      ragSearch: async (query) => { queries.push(query); return { breadcrumbs: [] } },
     })
 
     await plugin["chat.message"](
@@ -238,8 +238,7 @@ test("RAG search sends the prompt and adds returned episodes to system context",
           query: value,
           retrieval_id: "retrieval-rag-1",
           retrieval_version: "seed-v1",
-          result_count: episodes.length,
-          results: episodes,
+          breadcrumbs: episodes,
         }
       },
     })

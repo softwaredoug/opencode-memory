@@ -70,10 +70,12 @@ the file is installed under `$OPENCODE_CONFIG_DIR/plugins/` instead.
 
 For user prompts longer than 100 characters by default, the plugin can request
 prior episodes from the daemon's `POST /rag-search` endpoint. It sends only
-`{"query": "<user prompt>"}` over the daemon's Unix socket and adds non-empty
-returned `results` to the system context. The endpoint currently returns an
-empty result set as a stub. Responses include a per-response `retrieval_id` and
-a stable `retrieval_version` (`stub-v1` for the current stub). The plugin logs
+`{"query": "<user prompt>"}` over the daemon's Unix socket and uses a
+TurboPuffer ANN vector search with native `voyage/voyage-4-large` embeddings.
+The response contains `{"breadcrumbs": [...]}`, with no more than two results
+per project and one per session. The plugin adds non-empty breadcrumbs to the
+system context. Responses include a per-response `retrieval_id` and a stable
+strategy `retrieval_version` (`voyage-ann-diverse-v1`). The plugin logs
 `rag_retrieval` and `history_cli_call` telemetry events, associating history
 CLI calls with the latest RAG response in that session and recording whether
 project/session filters match its results. CLI events represent tool-call

@@ -1,5 +1,7 @@
 import asyncio
 import json
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -11,33 +13,78 @@ import opencode_memory.daemon as daemon
 from opencode_memory.tpuf import TurboPufferIndex
 
 
-def test_rag_search_returns_empty_results_without_searching(monkeypatch):
+def test_rag_search_returns_diversified_voyage_breadcrumbs(monkeypatch):
     async def no_reindex_loop():
         await asyncio.Event().wait()
 
-    indexer_calls = []
-
-    def unexpected_indexer():
-        indexer_calls.append(True)
-        raise AssertionError("RAG search stub must not contact the index")
+    namespace = f"test_rag_search_{uuid4().hex}"
+    index_class = TurboPufferIndex
+    query = "How do we resolve database connection pool exhaustion and request timeouts?"
+    transcript = (
+        "User: Database connection pool exhaustion caused request timeouts.\n"
+        "Assistant: We resolved it by bounding concurrency, adding connection acquisition timeouts, "
+        "and monitoring pool wait time."
+    )
+    projects_and_sessions = [
+        ("alpha", "alpha-session-one"),
+        ("alpha", "alpha-session-one"),
+        ("alpha", "alpha-session-two"),
+        ("beta", "beta-session-one"),
+        ("beta", "beta-session-two"),
+        ("gamma", "gamma-session-one"),
+    ]
+    docs = [
+        {
+            "id": f"{namespace}_{index}",
+            "session_id": session_id,
+            "prompt_id": f"prompt_{index}",
+            "prompt_ordinal": index,
+            "prompt_timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=index),
+            "project_path": f"/projects/{project}",
+            "transcript": transcript,
+            "transcript_full": transcript,
+            "is_system_prompt": False,
+        }
+        for index, (project, session_id) in enumerate(projects_and_sessions)
+    ]
 
     monkeypatch.setattr(daemon, "reindex_loop", no_reindex_loop)
-    monkeypatch.setattr(daemon, "TurboPufferIndex", unexpected_indexer)
+    monkeypatch.setattr(
+        daemon,
+        "TurboPufferIndex",
+        lambda: index_class(ns_name=namespace),
+    )
 
-    with TestClient(daemon.app) as client:
-        response = client.post("/rag-search", json={"query": "retrieve an episode"})
+    async def seed_and_clean_namespace():
+        index = index_class(ns_name=namespace)
+        try:
+            await index.index_docs(docs, last_index_time=datetime.min.replace(tzinfo=timezone.utc))
+        except Exception:
+            await index.tpuf.close()
+            raise
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload == {
-        "query": "retrieve an episode",
-        "result_count": 0,
-        "results": [],
-        "retrieval_id": payload["retrieval_id"],
-        "retrieval_version": daemon.RAG_RETRIEVAL_VERSION,
-    }
-    assert UUID(payload["retrieval_id"])
-    assert indexer_calls == []
+        try:
+            with TestClient(daemon.app) as client:
+                response = client.post("/rag-search", json={"query": query})
+
+            assert response.status_code == 200
+            payload = response.json()
+            breadcrumbs = payload["breadcrumbs"]
+            assert payload["retrieval_version"] == "voyage-ann-diverse-v1"
+            assert UUID(payload["retrieval_id"])
+            assert len(breadcrumbs) == 5
+            assert all(
+                "database connection pool" in item["transcript"].lower()
+                for item in breadcrumbs
+            )
+            assert max(Counter(item["project_path"] for item in breadcrumbs).values()) <= 2
+            assert max(Counter(item["session_id"] for item in breadcrumbs).values()) == 1
+            assert len({item["project_path"] for item in breadcrumbs}) == 3
+        finally:
+            await index.ns.delete_all()
+            await index.tpuf.close()
+
+    asyncio.run(seed_and_clean_namespace())
 
 
 @pytest.mark.asyncio

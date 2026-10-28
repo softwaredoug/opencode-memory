@@ -18,11 +18,44 @@ if TURBOPUFFER_API_KEY is None:
 DEFAULT_TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
 VOYAGE_MODEL = "voyage/voyage-4-large"
 MAX_QUERY_LIMIT = 10_000
+RAG_BREADCRUMB_LIMIT = 5
+RAG_CANDIDATE_MULTIPLIER = 10
+RAG_MAX_PER_PROJECT = 2
+RAG_MAX_PER_SESSION = 1
 INDEX_MAX_RETRIES = 3
 INDEX_RETRY_BASE_SECONDS = 1.0
 
 
 logger = logging.getLogger(__name__)
+
+
+def _row_value(row: Row, field: str):
+    return row.get(field) if isinstance(row, dict) else getattr(row, field, None)
+
+
+def diversify_rag_rows(rows: Iterable[Row], top_k: int = RAG_BREADCRUMB_LIMIT) -> list[Row]:
+    """Keep the highest-ranked rows while limiting repeated projects and sessions."""
+    selected = []
+    project_counts = {}
+    session_counts = {}
+
+    for row in rows:
+        project_path = _row_value(row, "project_path")
+        session_id = _row_value(row, "session_id")
+        if project_path is not None and project_counts.get(project_path, 0) >= RAG_MAX_PER_PROJECT:
+            continue
+        if session_id is not None and session_counts.get(session_id, 0) >= RAG_MAX_PER_SESSION:
+            continue
+
+        selected.append(row)
+        if project_path is not None:
+            project_counts[project_path] = project_counts.get(project_path, 0) + 1
+        if session_id is not None:
+            session_counts[session_id] = session_counts.get(session_id, 0) + 1
+        if len(selected) >= top_k:
+            break
+
+    return selected
 
 
 def ns_exists(tpuf, ns_name, expected_count=1):
@@ -305,3 +338,38 @@ class TurboPufferIndex:
             rerank_by=("RRF",),
         )
         return result.results[0]
+
+    async def rag_search(
+        self,
+        query: str,
+        top_k: int = RAG_BREADCRUMB_LIMIT,
+    ) -> list[Row]:
+        """Retrieve Voyage-vector candidates, then diversify across projects and sessions."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be a positive integer")
+        if not query.strip():
+            return []
+        if self.ns is None:
+            raise RuntimeError("Namespace is not initialized. Please index documents first.")
+
+        candidate_limit = min(top_k * RAG_CANDIDATE_MULTIPLIER, MAX_QUERY_LIMIT)
+        result = await self.ns.query(
+            rank_by=("transcript", "ANN", ("Embed", query)),
+            limit={
+                "total": candidate_limit,
+                "per": {
+                    "attributes": ["project_path", "session_id"],
+                    "limit": 1,
+                },
+            },
+            include_attributes=[
+                "id",
+                "transcript",
+                "session_id",
+                "prompt_id",
+                "prompt_ordinal",
+                "prompt_timestamp",
+                "project_path",
+            ],
+        )
+        return diversify_rag_rows(result.rows or [], top_k)
