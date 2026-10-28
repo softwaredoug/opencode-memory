@@ -60,6 +60,16 @@ Installs opencode plugin, a daemon, and a search CLI
 ./scripts/install.sh
 ```
 
+## Experimental RAG retrieval
+
+The plugin can retrieve prior episodes for each user prompt from the daemon's
+`POST /rag-search` endpoint. The plugin sends only `{"query": "<user prompt>"}`
+over the daemon's Unix socket and adds returned `results` to the system
+context. The endpoint currently returns an empty result set as a stub. Search
+is enabled by default; set `OPENCODE_RAG_SEARCH_ENABLED=false` in the
+environment used to start OpenCode to disable it. Retrieval errors are ignored
+so prompts continue normally.
+
 ## Extra info
 
 ### Ignore directories

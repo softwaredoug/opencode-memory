@@ -26,10 +26,12 @@ esac
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_file="$repo_dir/opencode-telemetry-plugin/telemetry.js"
 scrubber_source_file="$repo_dir/opencode-telemetry-plugin/scrubber.js"
+rag_search_source_file="$repo_dir/opencode-telemetry-plugin/rag-search.js"
 config_dir="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 plugin_dir="$config_dir/plugins"
 target_file="$plugin_dir/telemetry.js"
 scrubber_target_file="$plugin_dir/scrubber.js"
+rag_search_target_file="$plugin_dir/rag-search.js"
 
 if [[ ! -f "$source_file" ]]; then
   printf 'Source plugin not found: %s\n' "$source_file" >&2
@@ -41,7 +43,12 @@ if [[ ! -f "$scrubber_source_file" ]]; then
   exit 1
 fi
 
-if [[ ( -e "$target_file" || -e "$scrubber_target_file" ) && "$force" != true ]]; then
+if [[ ! -f "$rag_search_source_file" ]]; then
+  printf 'Source RAG search client not found: %s\n' "$rag_search_source_file" >&2
+  exit 1
+fi
+
+if [[ ( -e "$target_file" || -e "$scrubber_target_file" || -e "$rag_search_target_file" ) && "$force" != true ]]; then
   printf 'Plugin already exists: %s\n' "$target_file" >&2
   printf 'Re-run with --force to replace it.\n' >&2
   exit 1
@@ -50,7 +57,9 @@ fi
 mkdir -p "$plugin_dir"
 install -m 0644 "$source_file" "$target_file"
 install -m 0644 "$scrubber_source_file" "$scrubber_target_file"
+install -m 0644 "$rag_search_source_file" "$rag_search_target_file"
 
 printf 'Installed OpenCode telemetry plugin to %s\n' "$target_file"
 printf 'Installed telemetry scrubber to %s\n' "$scrubber_target_file"
+printf 'Installed RAG search client to %s\n' "$rag_search_target_file"
 printf 'Restart OpenCode for the plugin to load.\n'

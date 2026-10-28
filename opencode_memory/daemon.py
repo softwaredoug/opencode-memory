@@ -78,6 +78,10 @@ class SearchRequest(BaseModel):
     prompt_ordinal: int | None = Field(default=None, ge=0, description="Filter to one prompt ordinal within a session.")
 
 
+class RagSearchRequest(BaseModel):
+    query: str
+
+
 async def index_latest(force: bool = False):
     """Index the latest docs into TurboPuffer."""
     indexer = TurboPufferIndex()
@@ -130,6 +134,12 @@ async def search(request: SearchRequest):
         return results_payload(query, (response.rows or [])[:request.top_k])
     finally:
         await indexer.tpuf.close()
+
+
+@app.post("/rag-search")
+def rag_search(request: RagSearchRequest):
+    """Stub episode retrieval until RAG search is implemented."""
+    return results_payload(request.query, [])
 
 
 @app.get("/inspect/{doc_id}")

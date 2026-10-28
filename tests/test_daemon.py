@@ -11,6 +11,31 @@ import opencode_memory.daemon as daemon
 from opencode_memory.tpuf import TurboPufferIndex
 
 
+def test_rag_search_returns_empty_results_without_searching(monkeypatch):
+    async def no_reindex_loop():
+        await asyncio.Event().wait()
+
+    indexer_calls = []
+
+    def unexpected_indexer():
+        indexer_calls.append(True)
+        raise AssertionError("RAG search stub must not contact the index")
+
+    monkeypatch.setattr(daemon, "reindex_loop", no_reindex_loop)
+    monkeypatch.setattr(daemon, "TurboPufferIndex", unexpected_indexer)
+
+    with TestClient(daemon.app) as client:
+        response = client.post("/rag-search", json={"query": "retrieve an episode"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "query": "retrieve an episode",
+        "result_count": 0,
+        "results": [],
+    }
+    assert indexer_calls == []
+
+
 @pytest.mark.asyncio
 async def test_search_caps_fused_results_to_top_k(monkeypatch):
     rows = [

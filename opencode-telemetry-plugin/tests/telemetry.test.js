@@ -29,7 +29,8 @@ async function withEnvironment(values, callback) {
   const previous = new Map()
   for (const [name, value] of Object.entries(values)) {
     previous.set(name, process.env[name])
-    process.env[name] = value
+    if (value === null) delete process.env[name]
+    else process.env[name] = value
   }
 
   try {
@@ -119,15 +120,100 @@ test("calls all with no ignore file", async () => {
   }
 })
 
+test("RAG search can be disabled with its feature flag", async () => {
+  await withEnvironment({ OPENCODE_RAG_SEARCH_ENABLED: "false" }, async () => {
+    let calls = 0
+    const plugin = await TracePlugin({
+      writeEvent: async () => {},
+      ragSearch: async () => { calls++; return { results: [] } },
+    })
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag-disabled" },
+      { message: { id: "prompt-rag-disabled" }, parts: [{ type: "text", text: "prompt" }] },
+    )
+
+    assert.equal(calls, 0)
+  })
+})
+
+test("RAG search is enabled by default and skips empty results", async () => {
+  await withEnvironment({ OPENCODE_RAG_SEARCH_ENABLED: null }, async () => {
+    let calls = 0
+    const plugin = await TracePlugin({
+      writeEvent: async () => {},
+      ragSearch: async () => { calls++; return { results: [] } },
+    })
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag-default" },
+      { message: { id: "prompt-rag-default" }, parts: [{ type: "text", text: "prompt" }] },
+    )
+    const output = { system: ["Existing system prompt"] }
+    await plugin["experimental.chat.system.transform"](
+      { sessionID: "session-rag-default" },
+      output,
+    )
+
+    assert.equal(calls, 1)
+    assert.deepEqual(output.system, ["Existing system prompt"])
+  })
+})
+
+test("RAG search sends the prompt and adds returned episodes to system context", async () => {
+  const query = "Use the same queue strategy as before?"
+  const episodes = [{
+    id: "session_old_prompt_old",
+    transcript: "User: We used a bounded queue.\nAssistant: ...",
+  }]
+
+  await withEnvironment({ OPENCODE_RAG_SEARCH_ENABLED: "true" }, async () => {
+    const queries = []
+    const recordedEvents = []
+    const plugin = await TracePlugin({
+      writeEvent: async (eventType, data) => {
+        recordedEvents.push({ eventType, data: structuredClone(data) })
+      },
+      ragSearch: async (value) => {
+        queries.push(value)
+        return { query: value, result_count: episodes.length, results: episodes }
+      },
+    })
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag", messageID: "prompt-rag" },
+      { message: { id: "prompt-rag" }, parts: [{ type: "text", text: query }] },
+    )
+    const output = { system: ["Existing system prompt"] }
+    await plugin["experimental.chat.system.transform"](
+      { sessionID: "session-rag", model: {} },
+      output,
+    )
+
+    assert.deepEqual(queries, [query])
+    assert.equal(output.system.length, 2)
+    assert.ok(output.system[1].includes("<retrieved_episodes>"))
+    assert.ok(output.system[1].includes("session_old_prompt_old"))
+    assert.ok(output.system[1].includes("bounded queue"))
+
+    const systemPromptEvent = recordedEvents.find((event) => event.eventType === "system_prompt")
+    assert.ok(systemPromptEvent)
+    assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("<retrieved_episodes>"))
+    assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("session_old_prompt_old"))
+  })
+})
+
 test("writes full AGENTS.md metadata only on system prompts", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "opencode-telemetry-metadata-"))
   const telemetryFile = path.join(directory, "telemetry.jsonl")
   const agentsMd = "# Project instructions\n\nKeep this content on the system prompt only.\n"
   const previousTelemetryFile = process.env.OPENCODE_TELEMETRY_FILE
+  const previousRagSearchFlag = process.env.OPENCODE_RAG_SEARCH_ENABLED
 
   try {
     await writeFile(path.join(directory, "AGENTS.md"), agentsMd)
     process.env.OPENCODE_TELEMETRY_FILE = telemetryFile
+    process.env.OPENCODE_RAG_SEARCH_ENABLED = "false"
 
     const { TracePlugin: FreshTracePlugin } = await import(
       `../telemetry.js?metadata-test=${Date.now()}`
@@ -160,6 +246,8 @@ test("writes full AGENTS.md metadata only on system prompts", async () => {
   } finally {
     if (previousTelemetryFile === undefined) delete process.env.OPENCODE_TELEMETRY_FILE
     else process.env.OPENCODE_TELEMETRY_FILE = previousTelemetryFile
+    if (previousRagSearchFlag === undefined) delete process.env.OPENCODE_RAG_SEARCH_ENABLED
+    else process.env.OPENCODE_RAG_SEARCH_ENABLED = previousRagSearchFlag
     await rm(directory, { recursive: true, force: true })
   }
 })
