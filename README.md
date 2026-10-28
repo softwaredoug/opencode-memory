@@ -60,6 +60,12 @@ Installs opencode plugin, a daemon, and a search CLI
 ./scripts/install.sh
 ```
 
+The plugin appends the editable guidance in
+`~/.config/opencode/plugins/history-search-guidance.md` to each system prompt.
+Edit that installed file to customize the instructions, then restart OpenCode
+for the changes to take effect. If you use a custom OpenCode config directory,
+the file is installed under `$OPENCODE_CONFIG_DIR/plugins/` instead.
+
 ## Experimental RAG retrieval
 
 The plugin can retrieve prior episodes for each user prompt from the daemon's

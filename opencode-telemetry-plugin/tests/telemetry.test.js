@@ -156,7 +156,9 @@ test("RAG search is enabled by default and skips empty results", async () => {
     )
 
     assert.equal(calls, 1)
-    assert.deepEqual(output.system, ["Existing system prompt"])
+    assert.equal(output.system.length, 2)
+    assert.equal(output.system[0], "Existing system prompt")
+    assert.ok(output.system[1].includes("search_opencode_history"))
   })
 })
 
@@ -191,15 +193,17 @@ test("RAG search sends the prompt and adds returned episodes to system context",
     )
 
     assert.deepEqual(queries, [query])
-    assert.equal(output.system.length, 2)
-    assert.ok(output.system[1].includes("<retrieved_episodes>"))
-    assert.ok(output.system[1].includes("session_old_prompt_old"))
-    assert.ok(output.system[1].includes("bounded queue"))
+    assert.equal(output.system.length, 3)
+    assert.ok(output.system[1].includes("search_opencode_history"))
+    assert.ok(output.system[2].includes("<retrieved_episodes>"))
+    assert.ok(output.system[2].includes("session_old_prompt_old"))
+    assert.ok(output.system[2].includes("bounded queue"))
 
     const systemPromptEvent = recordedEvents.find((event) => event.eventType === "system_prompt")
     assert.ok(systemPromptEvent)
     assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("<retrieved_episodes>"))
     assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("session_old_prompt_old"))
+    assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("search_opencode_history"))
   })
 })
 

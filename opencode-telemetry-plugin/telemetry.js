@@ -22,6 +22,15 @@ function ragSearchEnabled() {
   return /^(1|true|yes)$/i.test(process.env.OPENCODE_RAG_SEARCH_ENABLED ?? "true")
 }
 
+async function loadHistorySearchGuidance() {
+  try {
+    return (await readFile(new URL("./history-search-guidance.md", import.meta.url), "utf8")).trim()
+  } catch (error) {
+    console.error("[telemetry] failed to load history search guidance:", error)
+    return ""
+  }
+}
+
 function promptText(parts) {
   if (!Array.isArray(parts)) return ""
   return parts
@@ -175,6 +184,7 @@ export const TracePlugin = async ({
   projectMetadata = await loadProjectMetadata(directory)
   const scrub = createScrubber()
   projectMetadata = scrub(projectMetadata)
+  const historySearchGuidance = await loadHistorySearchGuidance()
 
   // double check the ignore file, and if suddenly it has appeared,
   // we begin ignoring
@@ -221,6 +231,10 @@ export const TracePlugin = async ({
         system: output.system,
         system_state: projectMetadata,
       })
+
+      if (historySearchGuidance && Array.isArray(output.system)) {
+        output.system.push(historySearchGuidance)
+      }
 
       const sessionID = input.sessionID
       const results = sessionID ? ragResultsBySession.get(sessionID) : null
