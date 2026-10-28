@@ -17,6 +17,7 @@ if TURBOPUFFER_API_KEY is None:
     raise RuntimeError("TURBOPUFFER_API_KEY environment variable is not set.")
 DEFAULT_TPUF_NAMESPACE = os.getenv("TPUF_NAMESPACE", "opencodetrace")
 VOYAGE_MODEL = "voyage/voyage-4-large"
+MAX_QUERY_LIMIT = 10_000
 INDEX_MAX_RETRIES = 3
 INDEX_RETRY_BASE_SECONDS = 1.0
 
@@ -198,6 +199,37 @@ class TurboPufferIndex:
         )
 
         return result.rows[0] if result.rows else None
+
+    async def last_session_docs(self, session_id: str, n: int) -> list[Row]:
+        """Return the latest N prompt documents for a session in chronological order."""
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_QUERY_LIMIT:
+            raise ValueError(f"n must be an integer between 1 and {MAX_QUERY_LIMIT}")
+
+        result = await self.ns.query(
+            filters=(
+                "And",
+                (
+                    ("session_id", "Eq", session_id),
+                    ("is_system_prompt", "Eq", False),
+                ),
+            ),
+            rank_by=("prompt_ordinal", "desc"),
+            limit=n,
+            include_attributes=[
+                "id",
+                "session_id",
+                "prompt_id",
+                "prompt_ordinal",
+                "prompt_timestamp",
+                "project_path",
+                "transcript",
+                "transcript_full",
+            ],
+            consistency={"level": "strong"},
+        )
+
+        # TPuf returns the highest ordinals first; restore conversational order.
+        return list(reversed(result.rows or []))
 
     def _filters(self,
                  system_only: bool,

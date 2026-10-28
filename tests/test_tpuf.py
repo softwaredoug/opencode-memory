@@ -235,6 +235,43 @@ async def test_filtered_search_does_not_diversify(
         assert all(row["session_id"] == session_id for row in rows)
 
 
+@pytest.mark.asyncio
+async def test_last_session_docs_returns_latest_n_in_chronological_order(
+    tpuf_index: TurboPufferIndex,
+    tpuf_docs: list[dict],
+):
+    prompt_ordinals = {
+        "session_alpha_prompt_alpha_001": 0,
+        "session_alpha_prompt_alpha_002": 1,
+    }
+    docs = []
+    for doc in tpuf_docs:
+        indexed_doc = {
+            **doc,
+            "transcript_full": f"Full details: {doc['transcript']}",
+        }
+        if doc["id"] in prompt_ordinals:
+            indexed_doc["prompt_ordinal"] = prompt_ordinals[doc["id"]]
+        docs.append(indexed_doc)
+    await tpuf_index.index_docs(
+        docs,
+        last_index_time=datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+    rows = await tpuf_index.last_session_docs("session_alpha", n=2)
+    latest_row = await tpuf_index.last_session_docs("session_alpha", n=1)
+
+    assert [row["id"] for row in rows] == [
+        "session_alpha_prompt_alpha_001",
+        "session_alpha_prompt_alpha_002",
+    ]
+    assert [row["prompt_ordinal"] for row in rows] == [0, 1]
+    assert [row["id"] for row in latest_row] == ["session_alpha_prompt_alpha_002"]
+    assert rows[0]["transcript_full"] == (
+        "Full details: User: Add input validation to the signup form."
+    )
+
+
 def test_exact_search_limit_fits_global_limit():
     index = TurboPufferIndex.__new__(TurboPufferIndex)
 
