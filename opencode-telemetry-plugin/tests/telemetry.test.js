@@ -137,35 +137,90 @@ test("RAG search can be disabled with its feature flag", async () => {
   })
 })
 
-test("RAG search is enabled by default and skips empty results", async () => {
-  await withEnvironment({ OPENCODE_RAG_SEARCH_ENABLED: null }, async () => {
-    let calls = 0
+test("RAG search defaults on for prompts longer than 100 characters", async () => {
+  await withEnvironment({
+    OPENCODE_RAG_SEARCH_ENABLED: null,
+    OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH: null,
+  }, async () => {
+    const queries = []
     const plugin = await TracePlugin({
       writeEvent: async () => {},
-      ragSearch: async () => { calls++; return { results: [] } },
+      ragSearch: async (query) => { queries.push(query); return { results: [] } },
     })
 
     await plugin["chat.message"](
-      { sessionID: "session-rag-default" },
-      { message: { id: "prompt-rag-default" }, parts: [{ type: "text", text: "prompt" }] },
+      { sessionID: "session-rag-100" },
+      { message: { id: "prompt-rag-100" }, parts: [{ type: "text", text: "x".repeat(100) }] },
     )
-    const output = { system: ["Existing system prompt"] }
-    await plugin["experimental.chat.system.transform"](
-      { sessionID: "session-rag-default" },
-      output,
+    assert.deepEqual(queries, [])
+
+    const longPrompt = "x".repeat(101)
+    await plugin["chat.message"](
+      { sessionID: "session-rag-101" },
+      { message: { id: "prompt-rag-101" }, parts: [{ type: "text", text: longPrompt }] },
     )
 
-    assert.equal(calls, 1)
-    assert.equal(output.system.length, 2)
-    assert.equal(output.system[0], "Existing system prompt")
-    assert.ok(output.system[1].includes("search_opencode_history"))
+    assert.deepEqual(queries, [longPrompt])
+  })
+})
+
+test("RAG search prompt-length threshold can be overridden", async () => {
+  await withEnvironment({
+    OPENCODE_RAG_SEARCH_ENABLED: "true",
+    OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH: "4",
+  }, async () => {
+    const queries = []
+    const plugin = await TracePlugin({
+      writeEvent: async () => {},
+      ragSearch: async (query) => { queries.push(query); return { results: [] } },
+    })
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag-override-4" },
+      { message: { id: "prompt-rag-override-4" }, parts: [{ type: "text", text: "four" }] },
+    )
+    assert.deepEqual(queries, [])
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag-override-5" },
+      { message: { id: "prompt-rag-override-5" }, parts: [{ type: "text", text: "fives" }] },
+    )
+    assert.deepEqual(queries, ["fives"])
+  })
+})
+
+test("invalid RAG prompt-length threshold falls back to 100 characters", async () => {
+  await withEnvironment({
+    OPENCODE_RAG_SEARCH_ENABLED: "true",
+    OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH: "invalid",
+  }, async () => {
+    const queries = []
+    const plugin = await TracePlugin({
+      writeEvent: async () => {},
+      ragSearch: async (query) => { queries.push(query); return { results: [] } },
+    })
+
+    await plugin["chat.message"](
+      { sessionID: "session-rag-invalid-100" },
+      { message: { id: "prompt-rag-invalid-100" }, parts: [{ type: "text", text: "x".repeat(100) }] },
+    )
+    assert.deepEqual(queries, [])
+
+    const longPrompt = "x".repeat(101)
+    await plugin["chat.message"](
+      { sessionID: "session-rag-invalid-101" },
+      { message: { id: "prompt-rag-invalid-101" }, parts: [{ type: "text", text: longPrompt }] },
+    )
+    assert.deepEqual(queries, [longPrompt])
   })
 })
 
 test("RAG search sends the prompt and adds returned episodes to system context", async () => {
-  const query = "Use the same queue strategy as before?"
+  const query = "Use the same queue strategy as before? Include prior decisions, implementation details, and relevant examples."
   const episodes = [{
     id: "session_old_prompt_old",
+    project_path: "/project/rag",
+    session_id: "session-old",
     transcript: "User: We used a bounded queue.\nAssistant: ...",
   }]
 
@@ -173,12 +228,19 @@ test("RAG search sends the prompt and adds returned episodes to system context",
     const queries = []
     const recordedEvents = []
     const plugin = await TracePlugin({
+      directory: "/project/rag",
       writeEvent: async (eventType, data) => {
         recordedEvents.push({ eventType, data: structuredClone(data) })
       },
       ragSearch: async (value) => {
         queries.push(value)
-        return { query: value, result_count: episodes.length, results: episodes }
+        return {
+          query: value,
+          retrieval_id: "retrieval-rag-1",
+          retrieval_version: "seed-v1",
+          result_count: episodes.length,
+          results: episodes,
+        }
       },
     })
 
@@ -204,6 +266,48 @@ test("RAG search sends the prompt and adds returned episodes to system context",
     assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("<retrieved_episodes>"))
     assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("session_old_prompt_old"))
     assert.ok(!JSON.stringify(systemPromptEvent.data.system).includes("search_opencode_history"))
+
+    const retrievalEvent = recordedEvents.find((event) => event.eventType === "rag_retrieval")
+    assert.ok(retrievalEvent)
+    assert.equal(retrievalEvent.data.retrieval_id, "retrieval-rag-1")
+    assert.equal(retrievalEvent.data.retrieval_version, "seed-v1")
+    assert.equal(retrievalEvent.data.result_count, 1)
+    assert.deepEqual(retrievalEvent.data.project_paths, ["/project/rag"])
+    assert.deepEqual(retrievalEvent.data.session_ids, ["session-old"])
+
+    await plugin["tool.execute.before"](
+      { sessionID: "session-rag", tool: "bash", callID: "call-history-cli" },
+      {
+        args: {
+          command: 'search_opencode_history --project-path "$PWD" --session-id session-old queue',
+        },
+      },
+    )
+    const cliCall = recordedEvents.find((event) => event.eventType === "history_cli_call")
+    assert.ok(cliCall)
+    assert.equal(cliCall.data.retrieval_id, "retrieval-rag-1")
+    assert.equal(cliCall.data.retrieval_version, "seed-v1")
+    assert.equal(cliCall.data.retrieval_prompt_id, "prompt-rag")
+    assert.equal(cliCall.data.project_path_filter, "/project/rag")
+    assert.equal(cliCall.data.project_filter_matches_retrieval, true)
+    assert.equal(cliCall.data.session_filter_matches_retrieval, true)
+
+    await plugin["tool.execute.before"](
+      { sessionID: "session-rag", tool: "bash", callID: "call-history-cli-miss" },
+      {
+        args: {
+          command: "search_opencode_history --project-path /other/project --session-id other-session query",
+        },
+      },
+    )
+    const cliCalls = recordedEvents.filter((event) => event.eventType === "history_cli_call")
+    assert.equal(cliCalls.length, 2)
+    assert.deepEqual(cliCalls.map((event) => event.data.retrieval_id), [
+      "retrieval-rag-1",
+      "retrieval-rag-1",
+    ])
+    assert.equal(cliCalls[1].data.project_filter_matches_retrieval, false)
+    assert.equal(cliCalls[1].data.session_filter_matches_retrieval, false)
   })
 })
 

@@ -8,6 +8,7 @@ from sys import argv
 import asyncio
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from uuid import uuid4
 
 import uvicorn
 import turbopuffer
@@ -27,6 +28,7 @@ from .search import inspect_payload, results_payload
 DEFAULT_SOCKET_PATH = (
     Path.home() / ".local" / "share" / "opencode-history" / "service.sock"
 )
+RAG_RETRIEVAL_VERSION = "stub-v1"
 TELEMETRY_PATH_ENV = "OPENCODE_TELEMETRY_PATH"
 
 
@@ -139,7 +141,11 @@ async def search(request: SearchRequest):
 @app.post("/rag-search")
 def rag_search(request: RagSearchRequest):
     """Stub episode retrieval until RAG search is implemented."""
-    return results_payload(request.query, [])
+    return {
+        **results_payload(request.query, []),
+        "retrieval_id": str(uuid4()),
+        "retrieval_version": RAG_RETRIEVAL_VERSION,
+    }
 
 
 @app.get("/inspect/{doc_id}")

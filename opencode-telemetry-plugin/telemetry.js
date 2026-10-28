@@ -11,6 +11,7 @@ const telemetryDirectory = path.join(
   "opencode",
 )
 const telemetryFileOverride = process.env.OPENCODE_TELEMETRY_FILE
+const DEFAULT_RAG_SEARCH_MIN_PROMPT_LENGTH = 100
 
 let directoryReady
 let writeQueue = Promise.resolve()
@@ -20,6 +21,21 @@ let hasIgnore = false
 
 function ragSearchEnabled() {
   return /^(1|true|yes)$/i.test(process.env.OPENCODE_RAG_SEARCH_ENABLED ?? "true")
+}
+
+function ragSearchMinPromptLength() {
+  const configured = process.env.OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH
+  if (configured === undefined || configured.trim() === "") {
+    return DEFAULT_RAG_SEARCH_MIN_PROMPT_LENGTH
+  }
+
+  const normalized = configured.trim()
+  if (!/^\d+$/.test(normalized)) return DEFAULT_RAG_SEARCH_MIN_PROMPT_LENGTH
+
+  const value = Number(normalized)
+  return Number.isSafeInteger(value) && value >= 0
+    ? value
+    : DEFAULT_RAG_SEARCH_MIN_PROMPT_LENGTH
 }
 
 async function loadHistorySearchGuidance() {
@@ -46,6 +62,47 @@ function retrievedEpisodesContext(results) {
     JSON.stringify(results, null, 2),
     "</retrieved_episodes>",
   ].join("\n")
+}
+
+function uniqueResultValues(results, field) {
+  return [...new Set(results
+    .map((result) => result?.[field])
+    .filter((value) => typeof value === "string" && value.length > 0))]
+}
+
+function shellOption(command, option) {
+  const match = command.match(new RegExp(
+    `(?:^|\\s)--${option}(?:=|\\s+)(?:"([^"]*)"|'([^']*)'|([^\\s;&|]+))(?=$|[\\s;&|])`,
+  ))
+  return match?.slice(1).find((value) => value !== undefined) ?? null
+}
+
+function historySearchCliArgs(input, output) {
+  const command = output?.args?.command ?? output?.command ?? input?.args?.command
+  if (typeof command !== "string" || !/(?:^|[\s;&|])(?:[^\s;&|]*\/)?search_opencode_history(?=$|[\s;&|])/m.test(command)) {
+    return null
+  }
+
+  const inspectId = shellOption(command, "inspect")
+  return {
+    mode: inspectId === null ? "search" : "inspect",
+    projectPath: shellOption(command, "project-path"),
+    sessionId: shellOption(command, "session-id"),
+    inspectId,
+  }
+}
+
+function resolveProjectPathFilter(value, directory) {
+  if (value === null || typeof directory !== "string") return value
+
+  const pwdReference = /^(?:\$PWD|\$\{PWD\})(?:\/(.*))?$/.exec(value)
+  if (pwdReference) return path.resolve(directory, pwdReference[1] ?? "")
+  return value
+}
+
+function retrievalFilterMatch(filter, retrieval, field) {
+  if (filter === null || !retrieval) return null
+  return retrieval[field].includes(filter)
 }
 
 function telemetryFileFor(timestamp) {
@@ -163,7 +220,9 @@ export const TracePlugin = async ({
   ragSearch: ragSearchImpl = ragSearch,
 } = {}) => {
   const useRagSearch = ragSearchEnabled()
+  const minRagPromptLength = ragSearchMinPromptLength()
   const ragResultsBySession = new Map()
+  const latestRagRetrievalBySession = new Map()
   let hasIgnore = await hasIgnoreFile(directory)
 
   if (hasIgnore) {
@@ -211,12 +270,32 @@ export const TracePlugin = async ({
       if (!useRagSearch || !sessionID) return
 
       const query = promptText(output.parts)
-      if (!query.trim() || await hasIgnoreFile(directory)) return
+      if (
+        !query.trim()
+        || [...query].length <= minRagPromptLength
+        || await hasIgnoreFile(directory)
+      ) return
 
       try {
         const result = await ragSearchImpl(query)
-        if (Array.isArray(result.results) && result.results.length > 0) {
-          ragResultsBySession.set(sessionID, result.results)
+        if (!Array.isArray(result.results)) return
+
+        const retrieval = {
+          retrieval_id: result.retrieval_id,
+          retrieval_version: result.retrieval_version,
+          prompt_id: promptId,
+          result_count: result.results.length,
+          project_paths: uniqueResultValues(result.results, "project_path"),
+          session_ids: uniqueResultValues(result.results, "session_id"),
+        }
+        latestRagRetrievalBySession.set(sessionID, retrieval)
+        await writeEventGuardedImpl("rag_retrieval", {
+          input: { sessionID },
+          ...retrieval,
+        })
+
+        if (result.results.length > 0) {
+          ragResultsBySession.set(sessionID, { results: result.results, retrieval })
         }
       } catch (error) {
         // Retrieval is optional; a daemon/backend failure must not block the prompt.
@@ -237,12 +316,12 @@ export const TracePlugin = async ({
       }
 
       const sessionID = input.sessionID
-      const results = sessionID ? ragResultsBySession.get(sessionID) : null
-      if (!results) return
+      const pendingRetrieval = sessionID ? ragResultsBySession.get(sessionID) : null
+      if (!pendingRetrieval) return
       ragResultsBySession.delete(sessionID)
       if (await hasIgnoreFile(directory)) return
 
-      output.system.push(retrievedEpisodesContext(results))
+      output.system.push(retrievedEpisodesContext(pendingRetrieval.results))
     },
 
     "tool.execute.before": async (input, output) => {
@@ -251,6 +330,36 @@ export const TracePlugin = async ({
         output,
         prompt_id: promptIds.get(input.sessionID) ?? null,
       })
+
+      const cliArgs = historySearchCliArgs(input, output)
+      if (cliArgs) {
+        const retrieval = latestRagRetrievalBySession.get(input.sessionID) ?? null
+        const projectPathFilter = resolveProjectPathFilter(cliArgs.projectPath, directory)
+        await writeEventGuardedImpl("history_cli_call", {
+          input,
+          prompt_id: promptIds.get(input.sessionID) ?? null,
+          retrieval_id: retrieval?.retrieval_id ?? null,
+          retrieval_version: retrieval?.retrieval_version ?? null,
+          retrieval_prompt_id: retrieval?.prompt_id ?? null,
+          retrieval_result_count: retrieval?.result_count ?? null,
+          cli_mode: cliArgs.mode,
+          inspect_id: cliArgs.inspectId,
+          project_path_filter: projectPathFilter,
+          project_filter_applied: projectPathFilter !== null,
+          project_filter_matches_retrieval: retrievalFilterMatch(
+            projectPathFilter,
+            retrieval,
+            "project_paths",
+          ),
+          session_id_filter: cliArgs.sessionId,
+          session_filter_applied: cliArgs.sessionId !== null,
+          session_filter_matches_retrieval: retrievalFilterMatch(
+            cliArgs.sessionId,
+            retrieval,
+            "session_ids",
+          ),
+        })
+      }
 
       if (input.tool === "read" && isAgentsFile(output.args?.filePath)) {
         await writeEventGuardedImpl("instruction_read", {

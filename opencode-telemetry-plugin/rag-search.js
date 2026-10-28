@@ -43,8 +43,12 @@ export function ragSearch(query) {
 
           try {
             const result = JSON.parse(body)
-            if (!Array.isArray(result.results)) {
-              throw new Error("RAG search response must contain a results array")
+            if (
+              !Array.isArray(result.results)
+              || typeof result.retrieval_id !== "string"
+              || typeof result.retrieval_version !== "string"
+            ) {
+              throw new Error("RAG search response must contain results, retrieval_id, and retrieval_version")
             }
             resolve(result)
           } catch (error) {

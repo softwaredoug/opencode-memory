@@ -1,7 +1,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import pytest
@@ -28,11 +28,15 @@ def test_rag_search_returns_empty_results_without_searching(monkeypatch):
         response = client.post("/rag-search", json={"query": "retrieve an episode"})
 
     assert response.status_code == 200
-    assert response.json() == {
+    payload = response.json()
+    assert payload == {
         "query": "retrieve an episode",
         "result_count": 0,
         "results": [],
+        "retrieval_id": payload["retrieval_id"],
+        "retrieval_version": daemon.RAG_RETRIEVAL_VERSION,
     }
+    assert UUID(payload["retrieval_id"])
     assert indexer_calls == []
 
 

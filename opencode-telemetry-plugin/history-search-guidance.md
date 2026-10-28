@@ -4,6 +4,12 @@ Use the `search_opencode_history` CLI when prior conversations, decisions, or
 solutions could help with the current task. The history daemon must be running
 and the CLI must be available on `PATH`.
 
+For prompts longer than 100 characters by default, the plugin may request
+history breadcrumbs. Any results are added directly to the system context in a
+`<retrieved_episodes>` block. Use relevant details or document IDs from those
+breadcrumbs to explore further with a focused CLI search or `--inspect DOC_ID`.
+The threshold can be changed with `OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH`.
+
 Search for relevant history with a concise query:
 
 ```sh

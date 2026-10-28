@@ -24,6 +24,8 @@ test("posts only the prompt to the daemon's rag-search endpoint", async () => {
     response.end(JSON.stringify({
       query: requestBody.query,
       result_count: 1,
+      retrieval_id: "retrieval-1",
+      retrieval_version: "seed-v1",
       results: [{ id: "episode-1", transcript: "prior trace" }],
     }))
   })
@@ -39,6 +41,8 @@ test("posts only the prompt to the daemon's rag-search endpoint", async () => {
     assert.equal(requestMethod, "POST")
     assert.deepEqual(requestBody, { query })
     assert.deepEqual(result.results, [{ id: "episode-1", transcript: "prior trace" }])
+    assert.equal(result.retrieval_id, "retrieval-1")
+    assert.equal(result.retrieval_version, "seed-v1")
   } finally {
     if (previousSocketPath === undefined) delete process.env.OPENCODE_HISTORY_SOCKET
     else process.env.OPENCODE_HISTORY_SOCKET = previousSocketPath
