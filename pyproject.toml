@@ -11,6 +11,7 @@ dependencies = [
     "tqdm>=4.70.1",
     "turbopuffer>=2.9.0",
     "uvicorn>=0.34.0",
+    "openai>=3.40.0",
 ]
 
 [project.scripts]
