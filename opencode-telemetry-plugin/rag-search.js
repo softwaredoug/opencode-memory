@@ -21,9 +21,31 @@ function socketPath() {
   return configured
 }
 
+function responseErrorDetail(body) {
+  try {
+    const payload = JSON.parse(body)
+    if (typeof payload.detail === "string") return payload.detail
+    if (Array.isArray(payload.detail)) {
+      return payload.detail.map((error) => {
+        const location = Array.isArray(error.loc) ? error.loc.join(".") : "request"
+        return `${location}: ${error.msg ?? error.type ?? "invalid value"}`
+      }).join("; ")
+    }
+  } catch {
+    // Keep a short response excerpt for non-JSON errors.
+  }
+
+  return body.slice(0, 500)
+}
+
 /** Query the daemon's RAG endpoint over its Unix-domain HTTP socket. */
-export function ragSearch(query) {
+export function ragSearch(query, retrievalVersion) {
   return new Promise((resolve, reject) => {
+    const body = { query }
+    if (typeof retrievalVersion === "string") {
+      body.retrieval_version = retrievalVersion
+    }
+
     const request = http.request(
       {
         socketPath: socketPath(),
@@ -37,7 +59,8 @@ export function ragSearch(query) {
         response.on("data", (chunk) => { body += chunk })
         response.on("end", () => {
           if (response.statusCode < 200 || response.statusCode >= 300) {
-            reject(new Error(`RAG search returned HTTP ${response.statusCode}`))
+            const detail = responseErrorDetail(body)
+            reject(new Error(`RAG search returned HTTP ${response.statusCode}: ${detail}`))
             return
           }
 
@@ -62,6 +85,6 @@ export function ragSearch(query) {
       request.destroy(new Error("RAG search timed out"))
     })
     request.on("error", reject)
-    request.end(JSON.stringify({ query }))
+    request.end(JSON.stringify(body))
   })
 }

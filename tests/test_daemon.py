@@ -13,7 +13,7 @@ import opencode_memory.daemon as daemon
 from opencode_memory.tpuf import TurboPufferIndex
 
 
-def test_rag_search_returns_diversified_voyage_breadcrumbs(monkeypatch):
+def test_rag_search_returns_diversified_bm25_breadcrumbs(monkeypatch):
     async def no_reindex_loop():
         await asyncio.Event().wait()
 
@@ -66,11 +66,18 @@ def test_rag_search_returns_diversified_voyage_breadcrumbs(monkeypatch):
         try:
             with TestClient(daemon.app) as client:
                 response = client.post("/rag-search", json={"query": query})
+                vector_response = client.post(
+                    "/rag-search",
+                    json={
+                        "query": query,
+                        "retrieval_version": "voyage-ann-diverse-v1",
+                    },
+                )
 
             assert response.status_code == 200
             payload = response.json()
             breadcrumbs = payload["breadcrumbs"]
-            assert payload["retrieval_version"] == "voyage-ann-diverse-v1"
+            assert payload["retrieval_version"] == daemon.ACTIVE_RAG_VARIANT
             assert UUID(payload["retrieval_id"])
             assert len(breadcrumbs) == 5
             assert all(
@@ -80,11 +87,75 @@ def test_rag_search_returns_diversified_voyage_breadcrumbs(monkeypatch):
             assert max(Counter(item["project_path"] for item in breadcrumbs).values()) <= 2
             assert max(Counter(item["session_id"] for item in breadcrumbs).values()) == 1
             assert len({item["project_path"] for item in breadcrumbs}) == 3
+            assert vector_response.status_code == 200
+            assert vector_response.json()["retrieval_version"] == "voyage-ann-diverse-v1"
         finally:
             await index.ns.delete_all()
             await index.tpuf.close()
 
     asyncio.run(seed_and_clean_namespace())
+
+
+def test_rag_search_rejects_unknown_retrieval_version(monkeypatch):
+    async def no_reindex_loop():
+        await asyncio.Event().wait()
+
+    def unexpected_indexer():
+        raise AssertionError("An unsupported variant must be rejected before creating an indexer")
+
+    monkeypatch.setattr(daemon, "reindex_loop", no_reindex_loop)
+    monkeypatch.setattr(daemon, "TurboPufferIndex", unexpected_indexer)
+
+    with TestClient(daemon.app) as client:
+        response = client.post(
+            "/rag-search",
+            json={"query": "query", "retrieval_version": "missing-v0"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported retrieval_version: missing-v0"
+
+
+@pytest.mark.parametrize(
+    ("variant", "expected_method"),
+    [
+        ("velvet-comet", "rag_search"),
+        ("copper-meadow", "rag_search_bm25"),
+    ],
+)
+def test_rag_search_accepts_blind_variants(monkeypatch, variant, expected_method):
+    async def no_reindex_loop():
+        await asyncio.Event().wait()
+
+    calls = []
+
+    class FakeIndex:
+        class Client:
+            async def close(self):
+                pass
+
+        tpuf = Client()
+
+        async def rag_search(self, _query):
+            calls.append("rag_search")
+            return []
+
+        async def rag_search_bm25(self, _query):
+            calls.append("rag_search_bm25")
+            return []
+
+    monkeypatch.setattr(daemon, "reindex_loop", no_reindex_loop)
+    monkeypatch.setattr(daemon, "TurboPufferIndex", FakeIndex)
+
+    with TestClient(daemon.app) as client:
+        response = client.post(
+            "/rag-search",
+            json={"query": "query", "retrieval_version": variant},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["retrieval_version"] == variant
+    assert calls == [expected_method]
 
 
 @pytest.mark.asyncio

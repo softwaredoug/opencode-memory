@@ -57,7 +57,7 @@ hecking through the uv project environment.\n2: let g:ale_linters = {'python': [
 Installs opencode plugin, a daemon, and a search CLI
 
 ```bash
-./scripts/install.sh
+make install
 ```
 
 The plugin appends the editable guidance in
@@ -71,11 +71,15 @@ the file is installed under `$OPENCODE_CONFIG_DIR/plugins/` instead.
 For user prompts longer than 100 characters by default, the plugin can request
 prior episodes from the daemon's `POST /rag-search` endpoint. It sends only
 `{"query": "<user prompt>"}` over the daemon's Unix socket and uses a
-TurboPuffer ANN vector search with native `voyage/voyage-4-large` embeddings.
+TurboPuffer BM25 search over transcript text. The active variant is
+`bm25-v1`, selected by `ACTIVE_RAG_VARIANT` in `opencode_memory/daemon.py`;
+`voyage-ann-diverse-v1` remains available as an alternative. Socket clients may
+include an optional `retrieval_version` in the request JSON to select either
+variant; if omitted, the daemon uses the active variant.
 The response contains `{"breadcrumbs": [...]}`, with no more than two results
 per project and one per session. The plugin adds non-empty breadcrumbs to the
 system context. Responses include a per-response `retrieval_id` and a stable
-strategy `retrieval_version` (`voyage-ann-diverse-v1`). The plugin logs
+strategy `retrieval_version` matching the active variant. The plugin logs
 `rag_retrieval` and `history_cli_call` telemetry events, associating history
 CLI calls with the latest RAG response in that session and recording whether
 project/session filters match its results. CLI events represent tool-call
@@ -85,6 +89,14 @@ Search is enabled by default; set
 to disable it. Set `OPENCODE_RAG_SEARCH_MIN_PROMPT_LENGTH` to change the
 character threshold. Retrieval errors are ignored so prompts continue
 normally.
+
+## Testing
+
+Run the Python and OpenCode plugin test suites with:
+
+```bash
+make test
+```
 
 ## Extra info
 

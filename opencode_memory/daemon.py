@@ -28,7 +28,13 @@ from .search import inspect_payload, results_payload
 DEFAULT_SOCKET_PATH = (
     Path.home() / ".local" / "share" / "opencode-history" / "service.sock"
 )
-RAG_RETRIEVAL_VERSION = "voyage-ann-diverse-v1"
+ACTIVE_RAG_VARIANT = "bm25-v1"
+RAG_VARIANT_SEARCH_METHODS = {
+    "voyage-ann-diverse-v1": "rag_search",
+    "bm25-v1": "rag_search_bm25",
+    "velvet-comet": "rag_search",
+    "copper-meadow": "rag_search_bm25",
+}
 TELEMETRY_PATH_ENV = "OPENCODE_TELEMETRY_PATH"
 
 
@@ -82,6 +88,7 @@ class SearchRequest(BaseModel):
 
 class RagSearchRequest(BaseModel):
     query: str
+    retrieval_version: str | None = None
 
 
 async def index_latest(force: bool = False):
@@ -140,15 +147,27 @@ async def search(request: SearchRequest):
 
 @app.post("/rag-search")
 async def rag_search(request: RagSearchRequest):
-    """Return diversified history breadcrumbs from Voyage-vector search."""
+    """Return diversified history breadcrumbs from the active retrieval variant."""
+    retrieval_version = (
+        request.retrieval_version
+        if request.retrieval_version is not None
+        else ACTIVE_RAG_VARIANT
+    )
+    search_method = RAG_VARIANT_SEARCH_METHODS.get(retrieval_version)
+    if search_method is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported retrieval_version: {retrieval_version}",
+        )
+
     indexer = TurboPufferIndex()
     try:
-        rows = await indexer.rag_search(request.query)
+        rows = await getattr(indexer, search_method)(request.query)
         breadcrumbs = results_payload(request.query, rows)["results"]
         return {
             "breadcrumbs": breadcrumbs,
             "retrieval_id": str(uuid4()),
-            "retrieval_version": RAG_RETRIEVAL_VERSION,
+            "retrieval_version": retrieval_version,
         }
     finally:
         await indexer.tpuf.close()

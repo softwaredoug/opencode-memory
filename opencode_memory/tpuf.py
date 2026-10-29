@@ -7,7 +7,7 @@ from turbopuffer.types.namespace_multi_query_response import Result
 import logging
 from collections.abc import Iterable
 import os
-from typing import Iterator
+from typing import Any, Iterator
 from itertools import batched
 from datetime import datetime, timezone
 
@@ -339,12 +339,12 @@ class TurboPufferIndex:
         )
         return result.results[0]
 
-    async def rag_search(
+    async def _rag_search_candidates(
         self,
         query: str,
-        top_k: int = RAG_BREADCRUMB_LIMIT,
+        rank_by: Any,
+        top_k: int,
     ) -> list[Row]:
-        """Retrieve Voyage-vector candidates, then diversify across projects and sessions."""
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
             raise ValueError("top_k must be a positive integer")
         if not query.strip():
@@ -354,7 +354,7 @@ class TurboPufferIndex:
 
         candidate_limit = min(top_k * RAG_CANDIDATE_MULTIPLIER, MAX_QUERY_LIMIT)
         result = await self.ns.query(
-            rank_by=("transcript", "ANN", ("Embed", query)),
+            rank_by=rank_by,
             limit={
                 "total": candidate_limit,
                 "per": {
@@ -373,3 +373,27 @@ class TurboPufferIndex:
             ],
         )
         return diversify_rag_rows(result.rows or [], top_k)
+
+    async def rag_search(
+        self,
+        query: str,
+        top_k: int = RAG_BREADCRUMB_LIMIT,
+    ) -> list[Row]:
+        """Retrieve Voyage-vector candidates, then diversify across projects and sessions."""
+        return await self._rag_search_candidates(
+            query,
+            ("transcript", "ANN", ("Embed", query)),
+            top_k,
+        )
+
+    async def rag_search_bm25(
+        self,
+        query: str,
+        top_k: int = RAG_BREADCRUMB_LIMIT,
+    ) -> list[Row]:
+        """Retrieve BM25 candidates, then diversify across projects and sessions."""
+        return await self._rag_search_candidates(
+            query,
+            ("transcript", "BM25", query),
+            top_k,
+        )
