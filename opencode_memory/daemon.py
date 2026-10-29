@@ -34,6 +34,7 @@ RAG_VARIANT_SEARCH_METHODS = {
     "bm25-v1": "rag_search_bm25",
     "velvet-comet": "rag_search",
     "copper-meadow": "rag_search_bm25",
+    "silver-fern": "rag_search_rrf",
 }
 TELEMETRY_PATH_ENV = "OPENCODE_TELEMETRY_PATH"
 

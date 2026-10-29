@@ -121,6 +121,7 @@ def test_rag_search_rejects_unknown_retrieval_version(monkeypatch):
     [
         ("velvet-comet", "rag_search"),
         ("copper-meadow", "rag_search_bm25"),
+        ("silver-fern", "rag_search_rrf"),
     ],
 )
 def test_rag_search_accepts_blind_variants(monkeypatch, variant, expected_method):
@@ -142,6 +143,10 @@ def test_rag_search_accepts_blind_variants(monkeypatch, variant, expected_method
 
         async def rag_search_bm25(self, _query):
             calls.append("rag_search_bm25")
+            return []
+
+        async def rag_search_rrf(self, _query):
+            calls.append("rag_search_rrf")
             return []
 
     monkeypatch.setattr(daemon, "reindex_loop", no_reindex_loop)

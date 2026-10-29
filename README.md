@@ -73,9 +73,10 @@ prior episodes from the daemon's `POST /rag-search` endpoint. It sends only
 `{"query": "<user prompt>"}` over the daemon's Unix socket and uses a
 TurboPuffer BM25 search over transcript text. The active variant is
 `bm25-v1`, selected by `ACTIVE_RAG_VARIANT` in `opencode_memory/daemon.py`;
-`voyage-ann-diverse-v1` remains available as an alternative. Socket clients may
-include an optional `retrieval_version` in the request JSON to select either
-variant; if omitted, the daemon uses the active variant.
+`voyage-ann-diverse-v1` remains available as an alternative, along with other
+selectable variants. Socket clients may include an optional `retrieval_version`
+in the request JSON to select a variant; if omitted, the daemon uses the active
+variant.
 The response contains `{"breadcrumbs": [...]}`, with no more than two results
 per project and one per session. The plugin adds non-empty breadcrumbs to the
 system context. Responses include a per-response `retrieval_id` and a stable

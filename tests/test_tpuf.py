@@ -2,6 +2,7 @@ import opencode_memory.tpuf as tpuf_module
 from opencode_memory.tpuf import TurboPufferIndex, docs_batch
 import pytest_asyncio
 import pytest
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -233,6 +234,29 @@ async def test_filtered_search_does_not_diversify(
         assert all(row["project_path"] == project_path for row in rows)
     if session_id is not None:
         assert all(row["session_id"] == session_id for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_rag_search_rrf_fuses_bm25_and_voyage_and_diversifies(
+    tpuf_index: TurboPufferIndex,
+    tpuf_docs: list[dict],
+):
+    await tpuf_index.index_docs(tpuf_docs)
+
+    rows = await tpuf_index.rag_search_rrf(
+        "international phone numbers signup form validation",
+        top_k=5,
+    )
+
+    assert any(row["id"] == "session_alpha_prompt_alpha_002" for row in rows)
+    assert len(rows) <= 5
+    assert max(Counter(row["session_id"] for row in rows).values()) == 1
+    project_counts = Counter(
+        project_path
+        for row in rows
+        if (project_path := getattr(row, "project_path", None)) is not None
+    )
+    assert max(project_counts.values(), default=0) <= 2
 
 
 @pytest.mark.asyncio

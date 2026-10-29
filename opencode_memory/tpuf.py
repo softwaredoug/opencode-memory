@@ -397,3 +397,50 @@ class TurboPufferIndex:
             ("transcript", "BM25", query),
             top_k,
         )
+
+    async def rag_search_rrf(
+        self,
+        query: str,
+        top_k: int = RAG_BREADCRUMB_LIMIT,
+    ) -> list[Row]:
+        """Fuse BM25 and Voyage-vector candidates with RRF, then diversify."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be a positive integer")
+        if not query.strip():
+            return []
+        if self.ns is None:
+            raise RuntimeError("Namespace is not initialized. Please index documents first.")
+
+        logger.info(
+            "Querying TurboPuffer with BM25 and %s fused by RRF for top %s RAG results: %s",
+            VOYAGE_MODEL,
+            top_k,
+            query,
+        )
+        candidate_limit = min(top_k * RAG_CANDIDATE_MULTIPLIER, MAX_QUERY_LIMIT)
+        include_attributes = [
+            "id",
+            "transcript",
+            "session_id",
+            "prompt_id",
+            "prompt_ordinal",
+            "prompt_timestamp",
+            "project_path",
+        ]
+        result = await self.ns.multi_query(
+            queries=[
+                {
+                    "rank_by": ("transcript", "BM25", query),
+                    "limit": candidate_limit,
+                    "include_attributes": include_attributes,
+                },
+                {
+                    "rank_by": ("transcript", "ANN", ("Embed", query)),
+                    "limit": candidate_limit,
+                    "include_attributes": include_attributes,
+                },
+            ],
+            rerank_by=("RRF",),
+        )
+        rows = result.results[0].rows or []
+        return diversify_rag_rows(rows, top_k)
